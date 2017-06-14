@@ -3,6 +3,8 @@
 import tempfile
 import binascii
 import os
+import readline
+from functools import reduce
 
 class Clip(object):
     @staticmethod

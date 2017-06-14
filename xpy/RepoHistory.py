@@ -4,7 +4,6 @@
 
 import tempfile
 import os
-import numba
 
 from six.moves import map
 from itertools import *
@@ -52,8 +51,6 @@ class RepoHistory(object):
         self.attributes_file_path = os.path.join(self.clone_path, '.git/info/attributes')
         self.master_pid = os.getpid()
 
-        self.clone()
-
     def clone(self):
         if not os.path.exists(self.repo_url):
             os.system('git init --bare {repo_url}'.format(**self.__dict__))
@@ -91,15 +88,13 @@ class RepoHistory(object):
         if os.getpid() == self.master_pid:
             od = os.getcwd()
             os.chdir(self.clone_path)
+
+            # update merge attribute
             self.set_attribute(self.attributes_file_path, self.history_path, ['merge=union'])
-            # fd = os.open(self.attributes_file_path, os.O_RDONLY)
-            # os.close(fd)
-            print('sys.meta_path', sys.meta_path)
-            return
-            print('importing readling')
+
             readline.write_history_file(self.history_abspath)
-            print('done importing readling')
-            os.system('git add {history_path} && git commit -mwip ; git fetch && {{ [ -e ".git/refs/remotes/origin/HEAD" ] && git merge -munion || echo new master; }} && echo git push'.format(**self.__dict__))
+
+            os.system('git add {history_path} && git commit -mwip ; git fetch && {{ [ -e ".git/refs/remotes/origin/HEAD" ] && git merge -munion || echo new master; }} && git push'.format(**self.__dict__))
             os.chdir(od)
             os.system('rm -rf {tmpdir}'.format(**self.__dict__))
         else:

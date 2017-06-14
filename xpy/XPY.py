@@ -1,31 +1,36 @@
 #!/usr/bin/env python3
 
-import code
-import readline
 import sys
+import os
 
 from .Clip import Clip
 
 class XPY(object):
-    pass
-    def __init__(self):
-        self.setup_history()
-
     @classmethod
     def setup_tab_completion(self):
-        import rlcompleter, readline
+        import rlcompleter
+        import readline
         readline.parse_and_bind('tab: complete')
 
-    @classmethod
     def setup_history(self):
-        import rlcompleter, readline
-        self.startup_history_length = readline.get_current_history_length()
+        from .RepoHistory import RepoHistory
+        self.repo_history = RepoHistory('~/.pyhist')
+        self.repo_history.clone()
+
+    def commit_history(self):
+        import readline
+        self.repo_history.commit()
 
     def run(self):
-        ic = code.InteractiveConsole()
+        import code
+        import readline
+
+        self.setup_tab_completion()
+        self.setup_history()
+
+        ic = code.InteractiveConsole(globals())
         ic.interact()
+
+        self.commit_history()
+
         return 33
-
-    def __del__(self):
-        print(('xpy dtor'))
-
