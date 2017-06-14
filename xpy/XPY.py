@@ -4,12 +4,15 @@ import sys
 import os
 
 from .Clip import Clip
+from .Plot import Plot
 
 class XPY(object):
     @classmethod
-    def setup_tab_completion(self):
+    def setup_tab_completion(self, namespace):
         import rlcompleter
         import readline
+        completer = rlcompleter.Completer(namespace)
+        readline.set_completer(completer.complete)
         readline.parse_and_bind('tab: complete')
 
     def setup_history(self):
@@ -18,19 +21,18 @@ class XPY(object):
         self.repo_history.clone()
 
     def commit_history(self):
-        import readline
         self.repo_history.commit()
 
-    def run(self):
+    def run(self, namespace):
         import code
-        import readline
 
-        self.setup_tab_completion()
+        self.setup_tab_completion(namespace)
         self.setup_history()
 
-        ic = code.InteractiveConsole(globals())
+        ic = code.InteractiveConsole(namespace)
         ic.interact()
 
         self.commit_history()
 
         return 33
+

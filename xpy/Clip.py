@@ -1,7 +1,5 @@
 #!/usr/bin/env python3
 
-import tempfile
-import binascii
 import os
 import readline
 from functools import reduce
