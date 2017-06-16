@@ -1,7 +1,7 @@
+#!/usr/bin/env python3
 
 import sys
-from xpy import *
-from .Main import Main
+from .Main import *
 
 if __name__ == '__main__':
     sys.exit(Main.main())

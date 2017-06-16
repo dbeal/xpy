@@ -1,3 +1,3 @@
 
-pass
+from .XPY import *
 

@@ -94,7 +94,7 @@ class RepoHistory(object):
 
             readline.write_history_file(self.history_abspath)
 
-            os.system('git add {history_path} && git commit -mwip ; git fetch && {{ [ -e ".git/refs/remotes/origin/HEAD" ] && git merge -munion || echo new master; }} && git push'.format(**self.__dict__))
+            os.system('git diff -b && git add {history_path} && git commit -mwip ; git fetch && {{ [ -e ".git/refs/remotes/origin/HEAD" ] && git merge -munion || echo new master; }} && git push'.format(**self.__dict__))
             os.chdir(od)
             os.system('rm -rf {tmpdir}'.format(**self.__dict__))
         else:

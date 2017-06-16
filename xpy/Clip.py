@@ -3,6 +3,7 @@
 import os
 import readline
 from functools import reduce
+import inspect
 
 class Clip(object):
     @staticmethod
@@ -14,7 +15,7 @@ class Clip(object):
 
     @staticmethod
     def put(buf):
-        with os.popen('xsel -i', mode = 'w') as outfile:
+        with os.popen('xsel -i', 'w') as outfile:
             outfile.write(buf)
         
     @staticmethod
@@ -57,12 +58,14 @@ class Clip(object):
 
     @staticmethod
     def run():
-        # Clip.show()
+        """Run the contents of the clipboard within the caller's frame."""
         code = Clip.compile()
         if code is not None:
             (source, code) = code
             print(source)
-            exec(code, globals())
+            frame = inspect.currentframe()
+            frame = frame.f_back
+            exec(code, frame.f_globals, frame.f_locals)
         else:
             print('failed to compile')
 
