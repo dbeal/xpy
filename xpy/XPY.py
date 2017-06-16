@@ -12,6 +12,7 @@ from .Colors import Colors
 
 from cytoolz import curry
 
+# TODO: see if these are any faster than simply calling the functions directly.
 R0 = curry(os.read)(0)
 W1 = curry(os.write)(1)
 W2 = curry(os.write)(2)
@@ -26,9 +27,17 @@ class XPY(object):
         self.source = None
         self.code = None
 
-    def hello(self, msg):
-        """Encode and send a message to the programmer."""
-        W2(msg.encode())
+    def hello(self, text):
+        """Encode and send text to the programmer."""
+        return W2(text.encode())
+
+    def Hello(self, msg):
+        """Call hello with {template} tokens formatted to the caller's local scope."""
+        return self.hello(msg.format(**inspect.currentframe().f_back.f_locals))
+
+    def put(self, *msg):
+        """Send serialized message to the programmer."""
+        return W2(repr(msg) + '\n')
 
     def __enter__(self):
         if self.is_readline_busy:
@@ -41,7 +50,7 @@ class XPY(object):
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         if exc_val is not None:
-            self.hello(str(('__exit__', 'self', self, 'exc_type', exc_type, 'exc_val', exc_val, 'exc_tb', exc_tb)) + '\n')
+            self.put('__exit__', 'self', self, 'exc_type', exc_type, 'exc_val', exc_val, 'exc_tb', exc_tb)
         self.commit_history()
 
     def setup_tab_completion(self, namespaces):
@@ -49,14 +58,16 @@ class XPY(object):
             import rlcompleter
             import readline
             def completer(namespaces):
-                comps = [rlcompleter.Completer(ns) for ns in namespaces]
                 def fn(text, state):
-                    for (i, comp) in enumerate(comps):
-                        c = comp.complete(text, state)
-                        if c is not None:
-                            # self.hello(str(('found completion of', text, 'in namespace', i, c)) + '\n')
-                            return c
-                    return None
+                    # combined namespace takes last precedence
+                    combined = {}
+                    for ns in namespaces:
+                        combined.update(ns)
+                    comp = rlcompleter.Completer(combined)
+                    # prime the matches
+                    for i in range(state + 1):
+                        result = comp.complete(text, i)
+                    return result
                 return fn
             readline.set_completer(completer(namespaces))
             readline.parse_and_bind('tab: complete')
@@ -83,10 +94,8 @@ class XPY(object):
             # go back to the caller's frame
             frame = frame.f_back
 
-        # make copies of the globals and locals dicts so they can be owned by
-        # the new frame
-        g = dict(frame.f_globals)
-        l = dict(frame.f_locals)
+        g = frame.f_globals
+        l = frame.f_locals
 
         # don't keep a reference to the frame
         del frame
@@ -94,10 +103,16 @@ class XPY(object):
         # be nice and add some gadgets to the console namespace
         g.update(globals())
 
+        # add more trinkets
         l['xpy'] = self
 
         # readline can only support one instance at a time
-        self.setup_tab_completion([l, g])
+
+        # Make sure to search both global and local namespaces for autocomplete
+        # but don't duplicate the results if locals and globals are identical.
+        # In the stock Python interactive console, locals() is globals(), so
+        # rlcompleter only searches globals(), i.e., __main__.
+        self.setup_tab_completion([g, l])
 
         while True:
             try:
