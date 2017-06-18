@@ -7,25 +7,25 @@ import inspect
 
 class Clip(object):
     @staticmethod
-    def get():
+    def paste():
         result = None
         with os.popen('xsel -o') as infile:
             result = infile.read()
         return result
 
     @staticmethod
-    def put(buf):
+    def copy(buf):
         with os.popen('xsel -i', 'w') as outfile:
             outfile.write(buf)
         
     @staticmethod
     def show():
-        print(Clip.get().rstrip('\n'))
+        print(Clip.paste().rstrip('\n'))
 
     @staticmethod
     def compile():
         result = None
-        source = Clip.get()
+        source = Clip.paste()
         if source:
             # fix indent
             lines = source.split('\n')
@@ -38,23 +38,26 @@ class Clip(object):
         return result
 
     @staticmethod
-    def write_from_history(line_count):
+    def copy_from_history(line_count):
         l = readline.get_current_history_length()
         lines = []
         for i in range(max(l - line_count, 0), l):
             line = readline.get_history_item(i)
             lines.append(line)
         buf = '\n'.join(lines)
-        Clip.put(buf)
+        Clip.copy(buf)
 
     @staticmethod
-    def read_to_history():
+    def paste_into_history(is_split_lines = False):
         code = Clip.compile()
         if code is not None:
             (source, code) = code
             print(source)
-            for line in source.split('\n'):
-                readline.add_history(line)
+            if is_split_lines:
+                for line in source.split('\n'):
+                    readline.add_history(line)
+            else:
+                readline.add_history(source)
 
     @staticmethod
     def run():

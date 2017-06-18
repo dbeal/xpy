@@ -5,17 +5,13 @@ import os
 import code
 import inspect
 import traceback
-
-from .Clip import Clip
-from .Plot import Plot
-from .Colors import Colors
+import time
 
 from cytoolz import curry
 
-# TODO: see if these are any faster than simply calling the functions directly.
-R0 = curry(os.read)(0)
-W1 = curry(os.write)(1)
-W2 = curry(os.write)(2)
+from .Colors import Colors
+from .Micros import Micros as m
+from .ConsoleImports import ConsoleImports
 
 class XPY(object):
 
@@ -24,12 +20,12 @@ class XPY(object):
 
     def __init__(self):
         # holders for the compiled code
-        self.source = None
+        self.source = []
         self.code = None
 
     def hello(self, text):
         """Encode and send text to the programmer."""
-        return W2(text.encode())
+        return m.w2(text.encode())
 
     def Hello(self, msg):
         """Call hello with {template} tokens formatted to the caller's local scope."""
@@ -37,7 +33,7 @@ class XPY(object):
 
     def put(self, *msg):
         """Send serialized message to the programmer."""
-        return W2(repr(msg) + '\n')
+        return m.w2((repr(msg) + '\n').encode())
 
     def __enter__(self):
         if self.is_readline_busy:
@@ -85,39 +81,49 @@ class XPY(object):
         else:
             self.hello('not committing history\n')
 
-    def run(self, frame = None):
+    def run(self, with_globals, with_locals, is_polluted = True):
         from six.moves import input
 
-        if frame is None:
-            import inspect
-            frame = inspect.currentframe()
-            # go back to the caller's frame
-            frame = frame.f_back
+        g = with_globals
+        l = with_locals
 
-        g = frame.f_globals
-        l = frame.f_locals
+        if l is None:
+            l = g
 
-        # don't keep a reference to the frame
-        del frame
-
-        # be nice and add some gadgets to the console namespace
-        g.update(globals())
-
-        # add more trinkets
-        l['xpy'] = self
+        if is_polluted:
+            # be nice and add some gadgets to the console namespace
+            # g.update(globals())
+            g.update(filter(lambda kv: not kv[0].startswith('_'), ConsoleImports.__dict__.items()))
+            # add more trinkets
+            l['xpy'] = self
+        else:
+            # give a hoot and don't pollute
+            pass
 
         # readline can only support one instance at a time
 
-        # Make sure to search both global and local namespaces for autocomplete
-        # but don't duplicate the results if locals and globals are identical.
+        # Make sure to search both global and local namespaces for
+        # autocomplete, but the results aren't duplicated if locals and globals
+        # are identical.
+        #
         # In the stock Python interactive console, locals() is globals(), so
-        # rlcompleter only searches globals(), i.e., __main__.
+        # rlcompleter only bothers to search globals(), i.e., console __main__.
+        #
+        # In the event that globals() is not locals(), and a local parameter
+        # shadows a global, the local variable takes precedence.
         self.setup_tab_completion([g, l])
 
+        # Time each code execution.
+        self.t0 = 0.0
+        self.t1 = 0.0
+
         while True:
+            # readline gets messed up with color prompt
+            # prompt = Colors.GREY + ('%0.9f' % (self.t1 - self.t0)) + Colors.NORM + ' ' + Colors.GREEN + '!' + Colors.YELLOW + '!' + Colors.BLUE + '!' + Colors.NORM + ' '
+            prompt = ''.join((('%0.9f' % (self.t1 - self.t0)), ' ', '!', '!', '!', ' '))
             try:
                 try:
-                    line = input('!!! ')
+                    line = input(prompt)
                 except EOFError as e:
                     self.hello('\n')
                     break
@@ -132,14 +138,17 @@ class XPY(object):
         return 33
 
     def exec_source(self, source, g, l):
+        self.source.append(source)
         source = source.rstrip()
-        if source:
-            self.source = source
-            if '\n' in source:
-                self.code = compile(source, '<interactive console>', 'exec')
-            else:
-                self.code = compile(source, '<interactive console>', 'single')
-            exec(self.code, g, l)
+        if not source:
+            source = 'None'
+        if '\n' in source:
+            self.code = compile(source, '<interactive console>', 'exec')
+        else:
+            self.code = compile(source, '<interactive console>', 'single')
+        self.t0 = time.time()
+        exec(self.code, g, l)
+        self.t1 = time.time()
 
     def print_context_line(self, color, lineno, line):
         self.hello(' ' + color + ('% 4d' % lineno) + Colors.NORM + ': ' + color + line.rstrip() + Colors.NORM + '\n')
@@ -200,7 +209,7 @@ class XPY(object):
                 sourcelines = self.getsourcelines(frame)
             except IOError as e:
                 if frame.f_code == self.code:
-                    lines = self.source.split('\n')
+                    lines = self.source[-1].rstrip().split('\n')
                     firstlineno = self.code.co_firstlineno
                     sourcelines = [lines, firstlineno]
                 else:
@@ -234,10 +243,25 @@ class XPY(object):
     def print_exception(self, ex):
         self.hello(Colors.RED + str(ex.__class__) + Colors.NORM + ': ' + Colors.YELLOW + str(ex) + Colors.NORM + '\n')
 
-def xpy_start_console():
-    import inspect
+def xpy_start_console(with_globals = None, with_locals = None):
+    """
+    If run without globals or locals, take those values from the caller's
+    frame.
+    """
     result = 1
+
+    import inspect
+
+    frame = inspect.currentframe().f_back
+
+    if with_globals is None:
+        with_globals = frame.f_globals
+
+    if with_locals is None:
+        with_locals = frame.f_locals
+
     with XPY() as xpy:
-        result = xpy.run(inspect.currentframe().f_back)
+        result = xpy.run(with_globals, with_locals, is_polluted = True)
+
     return result
 
