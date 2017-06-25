@@ -7,5 +7,5 @@ class ConsoleImports(object):
     from .Clip import Clip
     from .Plot import Plot
     from .Colors import Colors
-    from .Micros import Micros as m
+    from .Micros import Micros as M
 

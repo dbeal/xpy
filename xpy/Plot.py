@@ -2,7 +2,7 @@
 
 class Plot(object):
     @classmethod
-    def function(self, fn, domain = (-10, 10), point_count = 1000):
+    def function(self, fn, domain = (-1, 1), point_count = 1000):
         import matplotlib.pyplot as plt
         import numpy as np
         X = np.linspace(domain[0], domain[1], point_count)

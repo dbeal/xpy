@@ -10,7 +10,7 @@ import time
 from cytoolz import curry
 
 from .Colors import Colors
-from .Micros import Micros as m
+from .Micros import Micros as M
 from .ConsoleImports import ConsoleImports
 
 class XPY(object):
@@ -25,7 +25,7 @@ class XPY(object):
 
     def hello(self, text):
         """Encode and send text to the programmer."""
-        return m.w2(text.encode())
+        return M.w2(text.encode())
 
     def Hello(self, msg):
         """Call hello with {template} tokens formatted to the caller's local scope."""
@@ -33,7 +33,7 @@ class XPY(object):
 
     def put(self, *msg):
         """Send serialized message to the programmer."""
-        return m.w2((repr(msg) + '\n').encode())
+        return M.w2((repr(msg) + '\n').encode())
 
     def __enter__(self):
         if self.is_readline_busy:
@@ -137,6 +137,15 @@ class XPY(object):
 
         return 33
 
+    def print_syntax_error(self, se):
+        with open(se.filename) as infile:
+            lines = list(infile)
+            se.filename
+            se.lineno
+            se.msg
+            se.offset
+            se.text
+
     def exec_source(self, source, g, l):
         self.source.append(source)
         source = source.rstrip()
@@ -151,7 +160,7 @@ class XPY(object):
         self.t1 = time.time()
 
     def print_context_line(self, color, lineno, line):
-        self.hello(' ' + color + ('% 4d' % lineno) + Colors.NORM + ': ' + color + line.rstrip() + Colors.NORM + '\n')
+        self.hello(' ' + color + ('% 4d' % lineno) + Colors.NORM + ': ' + color + (line or '').rstrip() + Colors.NORM + '\n')
 
     def getsourcelines(self, frame):
         import inspect
@@ -241,7 +250,12 @@ class XPY(object):
                     self.print_context_line(color, lineno, line)
 
     def print_exception(self, ex):
-        self.hello(Colors.RED + str(ex.__class__) + Colors.NORM + ': ' + Colors.YELLOW + str(ex) + Colors.NORM + '\n')
+        self.hello(Colors.RED + str(ex.__class__.__name__) + Colors.NORM + ': ' + Colors.YELLOW + str(ex) + Colors.NORM + '\n')
+        if isinstance(ex, SyntaxError):
+            if ex.offset is not None:
+                self.print_context_line(Colors.NORM, ex.lineno, ex.text[:ex.offset - 1] + Colors.BGRED + Colors.WHITE + ex.text[ex.offset - 1: ex.offset] + Colors.NORM + ex.text[ex.offset:])
+            else:
+                self.print_context_line(Colors.NORM, ex.lineno, ex.text)
 
 def xpy_start_console(with_globals = None, with_locals = None):
     """
