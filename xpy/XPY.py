@@ -9,6 +9,28 @@ import time
 
 from cytoolz import curry
 
+import greenlet
+
+class ResumEx(Exception):
+    pass
+
+def resumex(ex):
+    while True:
+        if isinstance(ex, Exception):
+            XPY.print_exception(ex)
+            if isinstance(ex, ResumEx):
+                ex = greenlet.getcurrent().parent.switch()
+            else:
+                ex = greenlet.getcurrent().parent.throw(ex)
+        else:
+            ex = greenlet.getcurrent().parent.switch()
+
+ResumEx.resumex = greenlet.greenlet(resumex)
+
+def rese(ex):
+    result = ResumEx.resumex.switch(ex)
+    return result
+
 from .Colors import Colors
 from .Micros import Micros as M
 from .ConsoleImports import ConsoleImports
@@ -23,14 +45,17 @@ class XPY(object):
         self.source = []
         self.code = None
 
+    @classmethod
     def hello(self, text):
         """Encode and send text to the programmer."""
         return M.w2(text.encode())
 
+    @classmethod
     def Hello(self, msg):
         """Call hello with {template} tokens formatted to the caller's local scope."""
         return self.hello(msg.format(**inspect.currentframe().f_back.f_locals))
 
+    @classmethod
     def put(self, *msg):
         """Send serialized message to the programmer."""
         return M.w2((repr(msg) + '\n').encode())
@@ -81,6 +106,21 @@ class XPY(object):
         else:
             self.hello('not committing history\n')
 
+    def setup_tracing(self):
+        def trace(frame, event, arg):
+            if event == 'exception':
+                # print('frame', frame, 'event', event, 'arg', arg)
+                (_, ex, tb) = arg
+                # self.print_exception(ex)
+                # print('ex', ex, 'tb', tb)
+            # sys.settrace(None)
+            return trace
+        sys.settrace(trace)
+        # xpy_start_console()
+
+    def setup_greenlet(self):
+        pass
+
     def run(self, with_globals, with_locals, is_polluted = True):
         from six.moves import input
 
@@ -113,6 +153,9 @@ class XPY(object):
         # shadows a global, the local variable takes precedence.
         self.setup_tab_completion([g, l])
 
+        # self.setup_tracing()
+        # self.setup_profiler()
+
         # Time each code execution.
         self.t0 = 0.0
         self.t1 = 0.0
@@ -122,18 +165,26 @@ class XPY(object):
             # prompt = Colors.GREY + ('%0.9f' % (self.t1 - self.t0)) + Colors.NORM + ' ' + Colors.GREEN + '!' + Colors.YELLOW + '!' + Colors.BLUE + '!' + Colors.NORM + ' '
             prompt = ''.join((('%0.9f' % (self.t1 - self.t0)), ' ', '!', '!', '!', ' '))
             try:
+                line = input(prompt)
+            except EOFError as e:
+                self.hello('\n')
+                break
+            else:
                 try:
-                    line = input(prompt)
-                except EOFError as e:
-                    self.hello('\n')
-                    break
+                    self.code = self.compile_source(line)
+                except:
+                    self.print_exception(sys.exc_info()[1])
                 else:
-                    self.exec_source(line, g, l)
-            except:
-                (_, ex, tb) = sys.exc_info()
+                    try:
+                        self.exec_code(self.code, g, l)
+                    except:
+                        (_, ex, tb) = sys.exc_info()
 
-                self.print_traceback(tb)
-                self.print_exception(ex)
+                        self.print_traceback(tb)
+                        self.print_exception(ex)
+                    else:
+                        # print('ok')
+                        pass
 
         return 33
 
@@ -146,19 +197,23 @@ class XPY(object):
             se.offset
             se.text
 
-    def exec_source(self, source, g, l):
+    def compile_source(self, source):
         self.source.append(source)
         source = source.rstrip()
         if not source:
             source = 'None'
         if '\n' in source:
-            self.code = compile(source, '<interactive console>', 'exec')
+            code = compile(source, '<interactive console>', 'exec')
         else:
-            self.code = compile(source, '<interactive console>', 'single')
+            code = compile(source, '<interactive console>', 'single')
+        return code
+
+    def exec_code(self, code, g, l):
         self.t0 = time.time()
-        exec(self.code, g, l)
+        exec(code, g, l)
         self.t1 = time.time()
 
+    @classmethod
     def print_context_line(self, color, lineno, line):
         self.hello(' ' + color + ('% 4d' % lineno) + Colors.NORM + ': ' + color + (line or '').rstrip() + Colors.NORM + '\n')
 
@@ -249,6 +304,7 @@ class XPY(object):
 
                     self.print_context_line(color, lineno, line)
 
+    @classmethod
     def print_exception(self, ex):
         self.hello(Colors.RED + str(ex.__class__.__name__) + Colors.NORM + ': ' + Colors.YELLOW + str(ex) + Colors.NORM + '\n')
         if isinstance(ex, SyntaxError):

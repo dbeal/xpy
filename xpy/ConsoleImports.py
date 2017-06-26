@@ -8,4 +8,6 @@ class ConsoleImports(object):
     from .Plot import Plot
     from .Colors import Colors
     from .Micros import Micros as M
+    from .XPY import ResumEx, rese
+    from .Profiler import Profiler
 
