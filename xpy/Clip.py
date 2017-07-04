@@ -23,15 +23,26 @@ class Clip(object):
         print(Clip.paste().rstrip('\n'))
 
     @staticmethod
+    def indent_len(line):
+        return len(line) - len(line.lstrip('\t '))
+
+    @staticmethod
+    def minimize_indent(source):
+        lines = source.split('\n')
+        lines = list(filter(lambda line: len(line.strip()) > 0, lines))
+        lines = list(filter(lambda line: not line.strip().startswith('#'), lines))
+        min_indent = reduce(lambda i0, i1: i1 if i0 is None else min(i0, i1), map(Clip.indent_len, lines), None)
+        source = '\n'.join((map(lambda line: line[min_indent:], lines)))
+
+        return source
+
+    @staticmethod
     def compile():
         result = None
         source = Clip.paste()
         if source:
             # fix indent
-            lines = source.split('\n')
-            lines = list(filter(lambda line: len(line.strip()) > 0, lines))
-            min_indent = reduce(lambda i0, i1: min(i0, i1), map(lambda line: len(line) - len(line.lstrip('\t ')), lines))
-            source = '\n'.join((map(lambda line: line[min_indent:], lines)))
+            source = Clip.minimize_indent(source)
 
             code = compile(source, __name__, 'exec')
             result = (source, code)
@@ -52,11 +63,13 @@ class Clip(object):
         code = Clip.compile()
         if code is not None:
             (source, code) = code
-            print(source)
             if is_split_lines:
                 for line in source.split('\n'):
-                    readline.add_history(line)
-            else:
+                    if line:
+                        readline.add_history(line)
+                        print(line)
+            elif source:
+                print(source)
                 readline.add_history(source)
 
     @staticmethod

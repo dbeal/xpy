@@ -34,6 +34,7 @@ def rese(ex):
 from .Colors import Colors
 from .Micros import Micros as M
 from .ConsoleImports import ConsoleImports
+from .Anymethod import anymethod
 
 class XPY(object):
 
@@ -110,7 +111,7 @@ class XPY(object):
         def trace(frame, event, arg):
             if event == 'exception':
                 # print('frame', frame, 'event', event, 'arg', arg)
-                (_, ex, tb) = arg
+                (exc_type, ex, tb) = arg
                 # self.print_exception(ex)
                 # print('ex', ex, 'tb', tb)
             # sys.settrace(None)
@@ -153,6 +154,10 @@ class XPY(object):
         # shadows a global, the local variable takes precedence.
         self.setup_tab_completion([g, l])
 
+        # QUESTION: does this create a reference cycle?
+        self.g = g
+        self.l = l
+
         # self.setup_tracing()
         # self.setup_profiler()
 
@@ -161,32 +166,83 @@ class XPY(object):
         self.t1 = 0.0
 
         while True:
-            # readline gets messed up with color prompt
-            # prompt = Colors.GREY + ('%0.9f' % (self.t1 - self.t0)) + Colors.NORM + ' ' + Colors.GREEN + '!' + Colors.YELLOW + '!' + Colors.BLUE + '!' + Colors.NORM + ' '
-            prompt = ''.join((('%0.9f' % (self.t1 - self.t0)), ' ', '!', '!', '!', ' '))
+            prompt = self.get_prompt()
+            # os.write(2, prompt)
             try:
-                line = input(prompt)
+                source = input(prompt)
+            except KeyboardInterrupt as ke:
+                (exc_type, ex, tb) = sys.exc_info()
+                self.hello('\n')
+                self.print_exception(ex)
             except EOFError as e:
                 self.hello('\n')
                 break
             else:
-                try:
-                    self.code = self.compile_source(line)
-                except:
-                    self.print_exception(sys.exc_info()[1])
-                else:
-                    try:
-                        self.exec_code(self.code, g, l)
-                    except:
-                        (_, ex, tb) = sys.exc_info()
-
-                        self.print_traceback(tb)
-                        self.print_exception(ex)
-                    else:
-                        # print('ok')
-                        pass
+                if self.compile_and_exec(source):
+                    # print('ok')
+                    pass
 
         return 33
+
+    @anymethod
+    def format_times(self, t0, t1):
+        prefix = ''.join((
+            Colors.RLGREEN,
+            '+',
+            Colors.RLNORM,
+        ))
+        fill = ''.join((
+            Colors.RLGREY,
+            '.',
+            Colors.RLNORM,
+        ))
+        width = 9
+        dt = int(1e9 * (t1 - t0))
+        n = dt
+        return [c
+            for ns in [str(n)]
+            for pad in [prefix + fill * max(width - len(ns), 0)]
+            for c in [pad + ns]
+        ][0]
+
+    def get_prompt(self):
+        # readline gets messed up with color prompt
+        # prompt = Colors.GREY + ('%0.9f' % (self.t1 - self.t0)) + Colors.NORM + ' ' + Colors.GREEN + '!' + Colors.YELLOW + '!' + Colors.BLUE + '!' + Colors.NORM + ' '
+        prompt = ''.join((
+            self.format_times(self.t0, self.t1),
+            ' ',
+            Colors.RLGREY,
+            '!', '!', '!',
+            Colors.RLNORM,
+            ' ',
+            # Colors.HOME(100, 50),
+        ))
+        if 0:
+            for c in Colors.__dict__:
+                if type(c) is str:
+                    prompt = prompt.replace(c, '\001' + c + '\002')
+        result = prompt
+        return result
+
+    def compile_and_exec(self, source):
+        result = False
+        try:
+            self.code = self.compile_source(source)
+        except:
+            self.print_exception(sys.exc_info()[1])
+        else:
+            try:
+                self.exec_code(self.code, self.g, self.l)
+            except:
+                self.t1 = time.time()
+
+                self.print_traceback()
+                self.print_exception()
+            else:
+                # print('ok')
+                result = True
+
+        return result
 
     def print_syntax_error(self, se):
         with open(se.filename) as infile:
@@ -217,6 +273,7 @@ class XPY(object):
     def print_context_line(self, color, lineno, line):
         self.hello(' ' + color + ('% 4d' % lineno) + Colors.NORM + ': ' + color + (line or '').rstrip() + Colors.NORM + '\n')
 
+    @anymethod
     def getsourcelines(self, frame):
         import inspect
         result = []
@@ -235,23 +292,35 @@ class XPY(object):
 
         return result
 
-    def print_traceback(self, tb):
-        import inspect
+    code = None
+    source = []
 
-        is_top_only = False
+    @anymethod
+    def print_traceback(self, tb = None):
+        if tb is None:
+            (_, ex, tb) = sys.exc_info()
+        top = self.get_traceback_top(tb)
+        self.print_backframes(top)
 
+    @anymethod
+    def get_traceback_top(self, tb):
         top = tb
         while top.tb_next is not None:
             top = top.tb_next
         top = top.tb_frame
+        return top
+
+    @anymethod
+    def print_backframes(self, top, tb = None):
+        import inspect
+
+        is_top_only = False
 
         frames = [top]
         while frames[-1].f_back is not None:
             frames.append(frames[-1].f_back)
 
         frames.reverse()
-
-        bottom = frames[0]
 
         last_path = None
 
@@ -282,7 +351,7 @@ class XPY(object):
             if sourcelines:
                 (lines, firstlineno) = sourcelines
                 for (lineno, line) in zip(range(firstlineno, firstlineno + len(lines)), lines):
-                    if frame == tb.tb_frame:
+                    if tb is not None and frame == tb.tb_frame:
                         if lineno == tb.tb_lineno:
                             color = Colors.RED
                         elif lineno == frame.f_lineno:
@@ -305,8 +374,10 @@ class XPY(object):
                     self.print_context_line(color, lineno, line)
 
     @classmethod
-    def print_exception(self, ex):
-        self.hello(Colors.RED + str(ex.__class__.__name__) + Colors.NORM + ': ' + Colors.YELLOW + str(ex) + Colors.NORM + '\n')
+    def print_exception(self, ex = None):
+        if ex is None:
+            (_, ex, tb) = sys.exc_info()
+        self.hello(Colors.RED + str(ex.__class__.__module__ + '.' + ex.__class__.__name__) + Colors.NORM + ((': ' + Colors.YELLOW + str(ex) + Colors.NORM) if str(ex) else '') + '\n')
         if isinstance(ex, SyntaxError):
             if ex.offset is not None:
                 self.print_context_line(Colors.NORM, ex.lineno, ex.text[:ex.offset - 1] + Colors.BGRED + Colors.WHITE + ex.text[ex.offset - 1: ex.offset] + Colors.NORM + ex.text[ex.offset:])

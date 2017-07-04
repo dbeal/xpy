@@ -6,40 +6,14 @@ import tempfile
 import os
 
 from six.moves import map
-from itertools import *
-from cytoolz.curried import *
+# from itertools import *
+# from cytoolz.curried import *
 import readline
 
 import sys
 
-def streamer(fd, chunk):
-    while True:
-        buf = os.read(fd, chunk)
-        if buf:
-            yield buf
-        else:
-            break
-
-def groupcomplete(it, is_completion):
-    """is_completion returns true for the element that indicates a complete set"""
-    p = None
-    for e in it:
-        if is_completion(e):
-            if p is not None:
-                yield p + [e]
-                p = None
-            else:
-                yield [e]
-        else:
-            if p is not None:
-                p.append(e)
-            else:
-                p = [e]
-    if p is not None:
-        yield p
-
-def splitter(bufs, eol):
-    return map(eol[:0].join, groupcomplete(concat(bufs), lambda e: e == eol))
+from .Text import Text
+from .File import File
 
 class RepoHistory(object):
     def __init__(self, repo_url):
@@ -75,7 +49,7 @@ class RepoHistory(object):
         is_attr_present = False
         fd = os.open(attributes_file_path, os.O_RDWR | os.O_CREAT)
         try:
-            for line in splitter(streamer(fd, 3), eol):
+            for line in Text.splitter(File.streamer(fd, 3), eol):
                 if line == attr_line:
                     break
                     is_attr_present = True
