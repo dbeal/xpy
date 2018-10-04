@@ -6,10 +6,13 @@ import code
 import inspect
 import traceback
 import time
+import importlib
 
 from cytoolz import curry
 
 import greenlet
+
+from collections import OrderedDict
 
 class ResumEx(Exception):
     pass
@@ -76,7 +79,7 @@ class XPY(object):
         self.commit_history()
 
     def setup_tab_completion(self, namespaces):
-        if self.repo_history is not None:
+        if 1 or self.repo_history is not None:
             import rlcompleter
             import readline
             def completer(namespaces):
@@ -132,11 +135,7 @@ class XPY(object):
             l = g
 
         if is_polluted:
-            # be nice and add some gadgets to the console namespace
-            # g.update(globals())
-            g.update(filter(lambda kv: not kv[0].startswith('_'), ConsoleImports.__dict__.items()))
-            # add more trinkets
-            l['xpy'] = self
+            self.pollute(g, l)
         else:
             # give a hoot and don't pollute
             pass
@@ -154,19 +153,30 @@ class XPY(object):
         # shadows a global, the local variable takes precedence.
         self.setup_tab_completion([g, l])
 
-        # QUESTION: does this create a reference cycle?
-        self.g = g
-        self.l = l
-
         # self.setup_tracing()
         # self.setup_profiler()
 
-        # Time each code execution.
-        self.t0 = 0.0
-        self.t1 = 0.0
+        #
+        # save references to environment
+        #
+        self.g = g
+        self.l = l
+        #
+        # create type
+        #
+        Execution = type('Execution', (), {})
+        #
+        execution = Execution()
+        #
+        execution.t0 = 0.0
+        execution.t1 = 0.0
+        #
+        # for switching context into module
+        #
+        self.locals = locals()
 
         while True:
-            prompt = self.get_prompt()
+            prompt = self.get_prompt(execution)
             # os.write(2, prompt)
             try:
                 source = input(prompt)
@@ -178,7 +188,14 @@ class XPY(object):
                 self.hello('\n')
                 break
             else:
-                if self.compile_and_exec(source):
+                #
+                execution.g = self.g
+                execution.l = self.l
+                execution.source = source
+                #
+                #
+                #
+                if self.compile_and_exec(execution):
                     # print('ok')
                     pass
 
@@ -205,16 +222,23 @@ class XPY(object):
             for c in [pad + ns]
         ][0]
 
-    def get_prompt(self):
+    def get_prompt(self, execution):
         # readline gets messed up with color prompt
         # prompt = Colors.GREY + ('%0.9f' % (self.t1 - self.t0)) + Colors.NORM + ' ' + Colors.GREEN + '!' + Colors.YELLOW + '!' + Colors.BLUE + '!' + Colors.NORM + ' '
+        #
         prompt = ''.join((
-            self.format_times(self.t0, self.t1),
-            ' ',
-            Colors.RLGREY,
-            '!', '!', '!',
-            Colors.RLNORM,
-            ' ',
+            self.format_times(execution.t0, execution.t1),
+            Colors.RLNORM, ' ',
+            Colors.RLBLUE,
+            #
+            # name of current module context
+            #
+            self.g['__name__'],
+            #
+            Colors.RLNORM, ' ',
+            Colors.RLGREY, '!', '!', '!',
+            #
+            Colors.RLNORM, ' ',
             # Colors.HOME(100, 50),
         ))
         if 0:
@@ -224,25 +248,34 @@ class XPY(object):
         result = prompt
         return result
 
-    def compile_and_exec(self, source):
-        result = False
+    def compile_and_exec(self, execution):
+        #
+        execution.result = False
+        #
         try:
-            self.code = self.compile_source(source)
+            execution.code = self.compile_source(execution.source)
         except:
             self.print_exception(sys.exc_info()[1])
         else:
+            #
+            # Time each code execution.
+            #
             try:
-                self.exec_code(self.code, self.g, self.l)
+                execution.t0 = time.time()
+                exec(execution.code, execution.g, execution.l)
+                execution.t1 = time.time()
             except:
-                self.t1 = time.time()
-
+                execution.t1 = time.time()
+                #
                 self.print_traceback()
                 self.print_exception()
             else:
+                #
                 # print('ok')
-                result = True
+                #
+                execution.result = True
 
-        return result
+        return execution.result
 
     def print_syntax_error(self, se):
         with open(se.filename) as infile:
@@ -263,11 +296,6 @@ class XPY(object):
         else:
             code = compile(source, '<interactive console>', 'single')
         return code
-
-    def exec_code(self, code, g, l):
-        self.t0 = time.time()
-        exec(code, g, l)
-        self.t1 = time.time()
 
     @classmethod
     def print_context_line(self, color, lineno, line):
@@ -383,6 +411,135 @@ class XPY(object):
                 self.print_context_line(Colors.NORM, ex.lineno, ex.text[:ex.offset - 1] + Colors.BGRED + Colors.WHITE + ex.text[ex.offset - 1: ex.offset] + Colors.NORM + ex.text[ex.offset:])
             else:
                 self.print_context_line(Colors.NORM, ex.lineno, ex.text)
+
+    #
+    def pollute(self, g, l):
+        #
+        # be nice and add some gadgets to the console namespace
+        #
+        pollution = OrderedDict(filter(lambda kv: not kv[0].startswith('_'), ConsoleImports.__dict__.items()))
+        #
+        g.update(pollution)
+        #
+        # add more trinkets
+        #
+        l['xpy'] = self
+    #
+    def switch(self, g, l):
+        #
+        self.g = g
+        self.l = l
+        #
+        self.setup_tab_completion([self.g, self.l])
+    #
+    def cdmod(self, modname, package = None):
+        #
+        back = inspect.currentframe().f_back
+        #
+        back__name__ = back.f_globals['__name__']
+        #
+        back__package__ = back.f_globals['__package__']
+        #
+        if modname == '..':
+            #
+            # cd up to parent module
+            #
+            modname = back__name__.rsplit('.', 1)[0]
+            package = back__package__
+        #
+        # switch context to module
+        #
+        mod = importlib.import_module(modname, back__package__)
+
+        #
+        # switch context
+        #
+        self.switch(mod.__dict__, self.l)
+        #
+        self.pollute(self.g, self.l)
+        #
+        # add reference to module within locals
+        #
+        self.l['__mod__'] = mod
+
+    @classmethod
+    def _reload(self, modname):
+        #
+        # in order to work with python2 or 3
+        #
+        try:
+            reload(modname)
+        except NameError as e:
+            import importlib
+            importlib.reload(modname)
+
+    def reload(self, modname = None):
+        #
+        # reload only the current module
+        #
+        back = inspect.currentframe().f_back
+        #
+        back__name__ = back.f_globals['__name__']
+        #
+        if modname is None:
+            #
+            modname = back__name__
+
+        if modname is not None:
+            #
+            #
+            #
+            mod = sys.modules.get(modname)
+            #
+            if mod is not None:
+                #
+                # mod is replaced
+                #
+                mod = self._reload(mod)
+            else:
+                #
+                # print('initial import of ' + modname)
+                #
+                #
+                mod = importlib.import_module(modname)
+        #
+        # reload current module
+        #
+
+        #
+        # switch to new reloaded module
+        #
+        self.cdmod(modname)
+
+        return mod
+
+    def refresh(self, regex):
+        #
+        # reload the current module
+        #
+        back = inspect.currentframe().f_back
+        #
+        back__name__ = back.f_globals['__name__']
+        #
+        # unload all modules by regex pattern and then reload the current module
+        #
+        import re
+        #
+        pat = re.compile('^' + regex)
+        #
+        match_count = 0
+        #
+        for (name, mod) in list(sys.modules.items()):
+            if pat.match(name):
+                sys.modules.pop(name)
+                match_count += 1
+        #
+        if not match_count:
+            print('no modules matched pattern', regex)
+        #
+        # now reload current module
+        #
+        self.reload(back__name__)
 
 def xpy_start_console(with_globals = None, with_locals = None):
     """

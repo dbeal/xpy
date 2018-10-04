@@ -4,7 +4,6 @@ class Debug(object):
     import inspect
 
     from .Colors import Colors
-    import networkx as nx
 
     _ast_cache = {}
 
@@ -17,6 +16,7 @@ class Debug(object):
 
     @classmethod
     def create_graph_from_ast(self, root, lines):
+        import networkx as nx
         g = self.nx.DiGraph()
         for edges in self.propagate_walk([(None, root)], lambda ab: [(ab[1], b) for b in self.ast.iter_child_nodes(ab[1])]):
             for ab in edges:

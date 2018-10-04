@@ -26,6 +26,10 @@ class Colors(object):
 
     NORM = S + "m"
 
+    #
+    # readline metrics for computing length of prompt without counting the
+    # bytes used for ansi codes
+    #
     # RL_PROMPT_START_IGNORE
     RLPSI = '\001'
     # RL_PROMPT_END_IGNORE

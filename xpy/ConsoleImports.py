@@ -5,11 +5,11 @@ class ConsoleImports(object):
     globals of the interpreter.
     """
     from .Clip import Clip
-    from .Plot import Plot
+    # from .Plot import Plot
     from .Colors import Colors
     from .Micros import Micros as M
     from .XPY import ResumEx, rese
     from .Profiler import Profiler
-    from .Builtins import EA, typedict, typename, FL
+    from .Builtins import EA, typedict, typename, FL, ls
     from .Debug import Debug
 
