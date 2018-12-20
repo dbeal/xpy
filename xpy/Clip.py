@@ -5,6 +5,8 @@ import readline
 from functools import reduce
 import inspect
 
+from .History import History
+
 class Clip(object):
     @staticmethod
     def paste():
@@ -50,11 +52,7 @@ class Clip(object):
 
     @staticmethod
     def copy_from_history(line_count):
-        l = readline.get_current_history_length()
-        lines = []
-        for i in range(max(l - line_count, 0), l):
-            line = readline.get_history_item(i)
-            lines.append(line)
+        lines = History.get_last(line_count)
         buf = '\n'.join(lines)
         Clip.copy(buf)
 
@@ -73,15 +71,21 @@ class Clip(object):
                 readline.add_history(source)
 
     @staticmethod
-    def run():
+    def run(_globals = None, _locals = None):
         """Run the contents of the clipboard within the caller's frame."""
         code = Clip.compile()
         if code is not None:
             (source, code) = code
-            print(source)
+            # print(source)
             frame = inspect.currentframe()
             frame = frame.f_back
-            exec(code, frame.f_globals, frame.f_locals)
+            #
+            if _globals is None:
+                _globals = frame.f_globals
+            if _locals is None:
+                _locals = frame.f_locals
+            #
+            exec(code, _globals, _locals)
         else:
             print('failed to compile')
 

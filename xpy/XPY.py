@@ -110,6 +110,16 @@ class XPY(object):
         else:
             self.hello('not committing history\n')
 
+    @staticmethod
+    def copy_from_history(line_count):
+        l = readline.get_current_history_length()
+        lines = []
+        for i in range(max(l - line_count, 0), l):
+            line = readline.get_history_item(i)
+            lines.append(line)
+        buf = '\n'.join(lines)
+        Clip.copy(buf)
+        
     def setup_tracing(self):
         def trace(frame, event, arg):
             if event == 'exception':
@@ -124,6 +134,33 @@ class XPY(object):
 
     def setup_greenlet(self):
         pass
+
+    def record(self):
+        if not self.is_recording:
+            self.macro[:] = []
+            self.is_recording = 1
+            #
+            # print('started macro record')
+            #
+
+    def stop(self):
+        if self.is_recording:
+            self.is_recording = 0
+            #
+            # print('stopped macro record')
+            #
+
+            #
+            # skip initial record command
+            #
+            self.macro[:] = self.macro[1:]
+
+    def play(self):
+        self.stop()
+        #
+        # print('playing macro', self.macro)
+        #
+        self.input.extend(self.macro)
 
     def run(self, with_globals, with_locals, is_polluted = True):
         from six.moves import input
@@ -162,6 +199,15 @@ class XPY(object):
         self.g = g
         self.l = l
         #
+        # setup macro
+        #
+        self.is_recording = 0
+        self.macro = []
+        #
+        # macro is placed in input queue
+        #
+        self.input = []
+        #
         # create type
         #
         Execution = type('Execution', (), {})
@@ -171,6 +217,10 @@ class XPY(object):
         execution.t0 = 0.0
         execution.t1 = 0.0
         #
+        # process level
+        #
+        execution.level = 0
+        #
         # for switching context into module
         #
         self.locals = locals()
@@ -178,16 +228,33 @@ class XPY(object):
         while True:
             prompt = self.get_prompt(execution)
             # os.write(2, prompt)
-            try:
-                source = input(prompt)
-            except KeyboardInterrupt as ke:
-                (exc_type, ex, tb) = sys.exc_info()
-                self.hello('\n')
-                self.print_exception(ex)
-            except EOFError as e:
-                self.hello('\n')
-                break
+            #
+            source = None
+            #
+            if len(self.input):
+                #
+                # print('input', self.input)
+                #
+                source = '\n'.join(self.input)
+                #
+                self.input[:] = []
+                #
             else:
+                try:
+                    source = input(prompt)
+                except KeyboardInterrupt as ke:
+                    (exc_type, ex, tb) = sys.exc_info()
+                    self.hello('\n')
+                    self.print_exception(ex)
+                except EOFError as e:
+                    self.hello('\n')
+                    break
+                else:
+                    pass
+            #
+            # print('source', source)
+            #
+            if source is not None:
                 #
                 execution.g = self.g
                 execution.l = self.l
@@ -198,35 +265,75 @@ class XPY(object):
                 if self.compile_and_exec(execution):
                     # print('ok')
                     pass
-
+                #
+                # record afterwards
+                #
+                if self.is_recording:
+                    # print('added source', source)
+                    self.macro.append(source)
         return 33
 
     @anymethod
     def format_times(self, t0, t1):
-        prefix = ''.join((
-            Colors.RLGREEN,
-            '+',
-            Colors.RLNORM,
-        ))
-        fill = ''.join((
-            Colors.RLGREY,
-            '.',
-            Colors.RLNORM,
-        ))
-        width = 9
-        dt = int(1e9 * (t1 - t0))
-        n = dt
-        return [c
-            for ns in [str(n)]
-            for pad in [prefix + fill * max(width - len(ns), 0)]
-            for c in [pad + ns]
-        ][0]
+        dt = t1 - t0
+        result = '%0.9f' % dt
+        #
+        if 0:
+            #
+            # show suffix
+            #
+            dt = t1 - t0
+            #
+            if dt < 1e-6:
+                #
+                # nanoseconds
+                #
+                suf = 'ns'
+                scale = 1e9
+            elif dt < 1e-3:
+                suf = 'us'
+                scale = 1e6
+            elif dt < 1:
+                suf = 'ms'
+                scale = 1e3
+            else:
+                suf = 's'
+                scale = 1e0
+
+            dti = '%0.3f' % (dt * scale)
+            result = str(dti) + suf
+            result = '%0.9f' % dt + ' (' + result + ')'
+
+        if 0:
+            prefix = ''.join((
+                Colors.RLGREEN,
+                '+',
+                Colors.RLNORM,
+            ))
+            fill = ''.join((
+                Colors.RLGREY,
+                '.',
+                Colors.RLNORM,
+            ))
+            width = 9
+            dt = int(1e9 * (t1 - t0))
+            n = dt
+            return [c
+                for ns in [str(n)]
+                for pad in [fill * max(width - len(ns), 0)]
+                for c in [pad + ns]
+            ][0]
+
+        return result
 
     def get_prompt(self, execution):
         # readline gets messed up with color prompt
         # prompt = Colors.GREY + ('%0.9f' % (self.t1 - self.t0)) + Colors.NORM + ' ' + Colors.GREEN + '!' + Colors.YELLOW + '!' + Colors.BLUE + '!' + Colors.NORM + ' '
         #
         prompt = ''.join((
+            Colors.RLGREEN,
+            '+' * (execution.level + 1),
+            Colors.RLNORM, ' ',
             self.format_times(execution.t0, execution.t1),
             Colors.RLNORM, ' ',
             Colors.RLBLUE,
@@ -253,7 +360,7 @@ class XPY(object):
         execution.result = False
         #
         try:
-            execution.code = self.compile_source(execution.source)
+            execution = self.compile_source(execution)
         except:
             self.print_exception(sys.exc_info()[1])
         else:
@@ -262,7 +369,12 @@ class XPY(object):
             #
             try:
                 execution.t0 = time.time()
+                self.execution = execution
                 exec(execution.code, execution.g, execution.l)
+                #
+                # break cyclic references
+                #
+                del self.execution
                 execution.t1 = time.time()
             except:
                 execution.t1 = time.time()
@@ -286,16 +398,31 @@ class XPY(object):
             se.offset
             se.text
 
-    def compile_source(self, source):
-        self.source.append(source)
+    def compile_source(self, execution):
+        source = execution.source
         source = source.rstrip()
+        if source == '.':
+            if len(self.source):
+                source = self.source[-1]
+                #
+                assert execution.code
+            else:
+                source = 'None'
+                execution.code = None
+        else:
+            execution.code = None
+        #
         if not source:
             source = 'None'
-        if '\n' in source:
-            code = compile(source, '<interactive console>', 'exec')
-        else:
-            code = compile(source, '<interactive console>', 'single')
-        return code
+        #
+        if not execution.code:
+            self.source.append(source)
+            if '\n' in source:
+                code = compile(source, '<interactive console>', 'exec')
+            else:
+                code = compile(source, '<interactive console>', 'single')
+            execution.code = code
+        return execution
 
     @classmethod
     def print_context_line(self, color, lineno, line):
@@ -325,13 +452,13 @@ class XPY(object):
 
     @anymethod
     def print_traceback(self, tb = None):
-        if tb is None:
-            (_, ex, tb) = sys.exc_info()
         top = self.get_traceback_top(tb)
         self.print_backframes(top)
 
     @anymethod
-    def get_traceback_top(self, tb):
+    def get_traceback_top(self, tb = None):
+        if tb is None:
+            (_, ex, tb) = sys.exc_info()
         top = tb
         while top.tb_next is not None:
             top = top.tb_next
@@ -454,7 +581,9 @@ class XPY(object):
         #
         # switch context
         #
-        self.switch(mod.__dict__, self.l)
+        # in module context, locals() is globals()
+        #
+        self.switch(mod.__dict__, mod.__dict__)
         #
         self.pollute(self.g, self.l)
         #
@@ -467,9 +596,11 @@ class XPY(object):
         #
         # in order to work with python2 or 3
         #
-        try:
+        if 'reload' in __builtins__:
+            # python 2
             reload(modname)
-        except NameError as e:
+        else:
+            # python 3
             import importlib
             importlib.reload(modname)
 
@@ -494,6 +625,12 @@ class XPY(object):
             if mod is not None:
                 #
                 # mod is replaced
+                #
+                # erase everything in module except for name
+                #
+                mod__name__ = mod.__name__
+                mod.__dict__.clear()
+                mod.__name__ = mod__name__
                 #
                 mod = self._reload(mod)
             else:
@@ -540,6 +677,20 @@ class XPY(object):
         # now reload current module
         #
         self.reload(back__name__)
+
+    def push(self):
+        """
+        fork and have parent wait
+        used to save and restore state 
+        """
+        pid = os.fork()
+        if pid:
+            os.waitpid(pid, 0)
+        else:
+            #
+            # wont work unless called within an evaluation
+            #
+            self.execution.level += 1
 
 def xpy_start_console(with_globals = None, with_locals = None):
     """

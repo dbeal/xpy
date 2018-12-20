@@ -39,9 +39,9 @@ def ls(regex_match_pattern = '.', sort_index = None):
     else:
         pat = None
     #
-    back = inspect.currentframe().f_back
-    #
     rows = []
+    #
+    back = inspect.currentframe().f_back
     #
     d = dict(back.f_globals)
     d.update(back.f_locals)
@@ -96,5 +96,20 @@ def ls(regex_match_pattern = '.', sort_index = None):
     os.write(1, (''.join([' '.join(row) + '\n' for row in rows])).encode('utf8'))
 
     # return raw_rows
+        
+def lsmod(mod):
+    return list(filter(lambda x: isinstance(x, type) and x.__module__ == mod.__name__, mod.__dict__.values()))
+
+def modref():
+    #
+    # TODO: show module references for types
+    #
+    backdict = dict(inspect.currentframe().f_back.f_globals)
+    #
+    #
+    for (n, v) in backdict.items():
+        if isinstance(v, type):
+            pass
+            
         
 

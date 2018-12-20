@@ -12,4 +12,5 @@ class ConsoleImports(object):
     from .Profiler import Profiler
     from .Builtins import EA, typedict, typename, FL, ls
     from .Debug import Debug
+    from .History import History
 
