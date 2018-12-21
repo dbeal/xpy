@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
 
+#
+# Copyright 2016-2018 David J. Beal, All Rights Reserved
+#
+
 from xpy import *
 # import xpy
 # from xpy.XPY import XPY

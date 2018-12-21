@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
 
+#
+# Copyright 2016-2018 David J. Beal, All Rights Reserved
+#
+
 import os
 import readline
 from functools import reduce
@@ -73,12 +77,14 @@ class Clip(object):
     @staticmethod
     def run(_globals = None, _locals = None):
         """Run the contents of the clipboard within the caller's frame."""
+        result = None
         code = Clip.compile()
         if code is not None:
             (source, code) = code
             # print(source)
             frame = inspect.currentframe()
             frame = frame.f_back
+            result = frame
             #
             if _globals is None:
                 _globals = frame.f_globals
@@ -88,5 +94,6 @@ class Clip(object):
             exec(code, _globals, _locals)
         else:
             print('failed to compile')
+        return result
 
 

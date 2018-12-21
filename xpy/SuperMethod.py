@@ -1,4 +1,8 @@
 
+#
+# Copyright 2016-2018 David J. Beal, All Rights Reserved
+#
+
 # from xpy.Debug import Debug
 from xpy.Anymethod import anymethod
 

@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+#
+# Copyright 2016-2018 David J. Beal, All Rights Reserved
+#
 
 import sys
 import os
@@ -17,6 +20,9 @@ from collections import OrderedDict
 class ResumEx(Exception):
     pass
 
+#
+# resumable exception
+#
 def resumex(ex):
     while True:
         if isinstance(ex, Exception):
@@ -30,9 +36,68 @@ def resumex(ex):
 
 ResumEx.resumex = greenlet.greenlet(resumex)
 
+#
+# raise resumable exception
+#
 def rese(ex):
     result = ResumEx.resumex.switch(ex)
     return result
+
+if 0:
+    import collections
+    #
+    if hasattr(collections, 'abc'):
+        from collections.abc import Mapping
+    else:
+        from collections import Mapping
+    #
+    class ShadowDict(Mapping):
+        #
+        # write to self.__dict__ directly to shadow a value in another dict
+        #
+
+        #
+        def __init__(self, other):
+            self.other = other
+            #
+        #
+        def __iter__(self):
+            return []
+            #
+        #
+        def __len__(self):
+            return 0
+            #
+        #
+        def __getitem__(self, name):
+            #
+            print('looking for name', name, 'in', 'self', self.__dict__.keys())
+            #
+            if name in self.__dict__:
+                #
+                print('found', name, 'in', self.__dict__.keys())
+                #
+                result = self.__dict__[name]
+                #
+                if name in self.other:
+                    print(' '.join([self.__class__.__name__, 'is', 'shadowing', name, 'in', 'other']))
+            else:
+                #
+                print('looking for name', name, 'in', 'other', self.__dict__.keys())
+                #
+                result = self.other[name]
+            #
+            return result
+            #
+        #
+        def __setitem__(self, name, value):
+            #
+            if name in self.__dict__:
+                self.__dict__[name] = value
+            else:
+                self.other[name] = value
+            #
+    #
 
 from .Colors import Colors
 from .Micros import Micros as M
@@ -171,12 +236,6 @@ class XPY(object):
         if l is None:
             l = g
 
-        if is_polluted:
-            self.pollute(g, l)
-        else:
-            # give a hoot and don't pollute
-            pass
-
         # readline can only support one instance at a time
 
         # Make sure to search both global and local namespaces for
@@ -213,6 +272,8 @@ class XPY(object):
         Execution = type('Execution', (), {})
         #
         execution = Execution()
+        #
+        execution.is_polluted = is_polluted
         #
         execution.t0 = 0.0
         execution.t1 = 0.0
@@ -271,7 +332,11 @@ class XPY(object):
                 if self.is_recording:
                     # print('added source', source)
                     self.macro.append(source)
-        return 33
+        #
+        if execution.level > 0:
+            self.__pushprocessexit()
+        #
+        return True
 
     @anymethod
     def format_times(self, t0, t1):
@@ -365,11 +430,19 @@ class XPY(object):
             self.print_exception(sys.exc_info()[1])
         else:
             #
+            if execution.is_polluted:
+                #
+                # pollute the environment with xpy objects
+                #
+                self.pollute(execution.g, execution.l)
+            #
+            #
             # Time each code execution.
             #
             try:
                 execution.t0 = time.time()
                 self.execution = execution
+                #
                 exec(execution.code, execution.g, execution.l)
                 #
                 # break cyclic references
@@ -386,6 +459,15 @@ class XPY(object):
                 # print('ok')
                 #
                 execution.result = True
+            #
+            # post execution pollution
+            #
+            if execution.is_polluted:
+                #
+                # TODO: clean up pollution
+                #
+                pass
+
 
         return execution.result
 
@@ -546,11 +628,24 @@ class XPY(object):
         #
         pollution = OrderedDict(filter(lambda kv: not kv[0].startswith('_'), ConsoleImports.__dict__.items()))
         #
-        g.update(pollution)
+        for (k, v) in pollution.items():
+            if k in g:
+                if g[k] is not v:
+                    #
+                    print(' '.join(['warning:', k, 'shadows', 'global']))
+                    #
+            g.update(pollution)
         #
         # add more trinkets
         #
-        l['xpy'] = self
+        k = 'xpy'
+        #
+        if k in l:
+            if l[k] is not self:
+                    #
+                    print(' '.join(['warning:', k, 'shadows', 'local']))
+                    #
+        l[k] = self
     #
     def switch(self, g, l):
         #
@@ -678,6 +773,16 @@ class XPY(object):
         #
         self.reload(back__name__)
 
+    def __pushprocessexit(self):
+        """
+        invoked by child when pushed child process exits
+        """
+        self.repo_history.write_history()
+        #
+        # print('child wrote history file')
+        #
+        os._exit(0)
+
     def push(self):
         """
         fork and have parent wait
@@ -686,13 +791,20 @@ class XPY(object):
         pid = os.fork()
         if pid:
             os.waitpid(pid, 0)
+            #
+            self.repo_history.read_history()
+            #
+            # print('parent read history file')
+            #
         else:
             #
             # wont work unless called within an evaluation
             #
             self.execution.level += 1
+            #
+            # self.repo_history.write_history()
 
-def xpy_start_console(with_globals = None, with_locals = None):
+def start_console(with_globals = None, with_locals = None, is_polluted = True):
     """
     If run without globals or locals, take those values from the caller's
     frame.
@@ -710,7 +822,11 @@ def xpy_start_console(with_globals = None, with_locals = None):
         with_locals = frame.f_locals
 
     with XPY() as xpy:
-        result = xpy.run(with_globals, with_locals, is_polluted = True)
+        #
+        with_locals['xpy'] = xpy
+        #
+        result = xpy.run(with_globals, with_locals, is_polluted = is_polluted)
 
     return result
 
+xpy_start_console = start_console

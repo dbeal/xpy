@@ -32,7 +32,7 @@ setup(
     url='https://github.com/dbeal/xpy',
 
     # Author details
-    author='David Beal',
+    author='David J. Beal',
     author_email='david.beal@protonmail.ch',
 
     # Choose your license

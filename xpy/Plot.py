@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
 
+#
+# Copyright 2016-2018 David J. Beal, All Rights Reserved
+#
+
 class Plot(object):
     @classmethod
     def function(self, fn, domain = (-1, 1), point_count = 1000):

@@ -1,3 +1,6 @@
+#
+# Copyright 2016-2018 David J. Beal, All Rights Reserved
+#
 
 from six.moves import map
 from cytoolz.curried import concat

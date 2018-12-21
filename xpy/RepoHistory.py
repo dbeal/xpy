@@ -1,6 +1,11 @@
 #!/usr/bin/env python
+#
+# Copyright 2016-2018 David J. Beal, All Rights Reserved
+#
 
+#
 # History file is merged using git to keep all appends from multiple sources.
+#
 
 import tempfile
 import os
@@ -27,12 +32,19 @@ class RepoHistory(object):
 
     def clone(self):
         if not os.path.exists(self.repo_url):
-            os.system('git init --bare {repo_url}'.format(**self.__dict__))
+            os.system(' '.join(['git init --bare ', self.repo_url]))
 
-        os.system('git clone {repo_url} {clone_path}'.format(**self.__dict__))
+        os.system(' '.join(['git clone ', self.repo_url, ' ', self.clone_path]))
 
+        self.read_history()
+
+    def read_history(self):
         if os.path.exists(self.history_abspath):
-            readline.read_history_file('{history_abspath}'.format(**self.__dict__))
+            readline.clear_history()
+            readline.read_history_file(self.history_abspath)
+            #
+            # print(' '.join(['read history file', self.history_abspath]))
+            #
 
     # set a git attribute
     def set_attribute(self, attributes_file_path, path, attrs):
@@ -58,20 +70,27 @@ class RepoHistory(object):
         finally:
             os.close(fd)
 
+    def write_history(self):
+        readline.write_history_file(self.history_abspath)
+        #
+        # print(' '.join(['wrote history file', self.history_abspath]))
+        #
+
     def commit(self):
         if os.getpid() == self.master_pid:
+            self.write_history()
+
             od = os.getcwd()
             os.chdir(self.clone_path)
 
             # update merge attribute
             self.set_attribute(self.attributes_file_path, self.history_path, ['merge=union'])
 
-            readline.write_history_file(self.history_abspath)
-
-            os.system('git diff -b && git add {history_path} && git commit -mwip ; git fetch && {{ [ -e ".git/refs/remotes/origin/HEAD" ] && git merge -munion || echo new master; }} && git push'.format(**self.__dict__))
+            os.system(' '.join(['git diff -b && git add ', self.history_path, ' && git commit -mwip ; git fetch && { [ -e ".git/refs/remotes/origin/HEAD" ] && git merge -munion || echo new master; } && git push']))
             os.chdir(od)
-            os.system('rm -rf {tmpdir}'.format(**self.__dict__))
+            os.system(' '.join(['rm', '-rf', "'", self.tmpdir, "'"]))
         else:
+            #
             # print('not the master process--not committing')
             pass
         pass
