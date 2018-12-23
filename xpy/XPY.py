@@ -253,11 +253,6 @@ class XPY(object):
         # self.setup_profiler()
 
         #
-        # save references to environment
-        #
-        self.g = g
-        self.l = l
-        #
         # setup macro
         #
         self.is_recording = 0
@@ -272,6 +267,11 @@ class XPY(object):
         Execution = type('Execution', (), {})
         #
         execution = Execution()
+        #
+        # save references to environment
+        #
+        execution.g = g
+        execution.l = l
         #
         execution.is_polluted = is_polluted
         #
@@ -317,14 +317,12 @@ class XPY(object):
             #
             if source is not None:
                 #
-                execution.g = self.g
-                execution.l = self.l
                 execution.source = source
                 #
-                #
-                #
                 if self.compile_and_exec(execution):
+                    #
                     # print('ok')
+                    #
                     pass
                 #
                 # record afterwards
@@ -405,7 +403,7 @@ class XPY(object):
             #
             # name of current module context
             #
-            self.g['__name__'],
+            execution.g['__name__'],
             #
             Colors.RLNORM, ' ',
             Colors.RLGREY, '!', '!', '!',
@@ -551,6 +549,8 @@ class XPY(object):
     def print_backframes(self, top, tb = None):
         import inspect
 
+        max_context_lines = 3
+        #
         is_top_only = False
 
         frames = [top]
@@ -570,10 +570,9 @@ class XPY(object):
             if path != last_path:
                 last_path = path
                 path = path + Colors.WHITE + ':'
+                self.hello(Colors.WHITE + path + Colors.NORM + '\n')
             else:
                 path = '...'
-
-            self.hello(Colors.WHITE + path + Colors.NORM + '\n')
 
             try:
                 sourcelines = self.getsourcelines(frame)
@@ -589,6 +588,8 @@ class XPY(object):
                 (lines, firstlineno) = sourcelines
                 for (lineno, line) in zip(range(firstlineno, firstlineno + len(lines)), lines):
                     if tb is not None and frame == tb.tb_frame:
+                        linedelta = lineno - tb.tb_lineno
+                        #
                         if lineno == tb.tb_lineno:
                             color = Colors.RED
                         elif lineno == frame.f_lineno:
@@ -598,6 +599,8 @@ class XPY(object):
                         else:
                             color = Colors.NORM
                     else:
+                        linedelta = lineno - frame.f_lineno
+                        #
                         if lineno == frame.f_lineno:
                             if frame.f_code == self.code:
                                 color = Colors.MAGENTA
@@ -608,7 +611,10 @@ class XPY(object):
                         else:
                             color = Colors.NORM
 
-                    self.print_context_line(color, lineno, line)
+                    if abs(linedelta) < max_context_lines:
+                        self.print_context_line(color, lineno, line)
+                    elif abs(linedelta) == max_context_lines:
+                        self.hello(Colors.WHITE + '...' + Colors.NORM + '\n')
 
     @classmethod
     def print_exception(self, ex = None):
@@ -649,10 +655,13 @@ class XPY(object):
     #
     def switch(self, g, l):
         #
-        self.g = g
-        self.l = l
+        self.setup_tab_completion([g, l])
         #
-        self.setup_tab_completion([self.g, self.l])
+        self.execution.g = g
+        self.execution.l = l
+        #
+        if self.execution.is_polluted:
+            self.pollute(self.execution.g, self.execution.l)
     #
     def cdmod(self, modname, package = None):
         #
@@ -680,11 +689,11 @@ class XPY(object):
         #
         self.switch(mod.__dict__, mod.__dict__)
         #
-        self.pollute(self.g, self.l)
+        # self.pollute(self.g, self.l)
         #
         # add reference to module within locals
         #
-        self.l['__mod__'] = mod
+        # self.l['__mod__'] = mod
 
     @classmethod
     def _reload(self, modname):
@@ -724,10 +733,29 @@ class XPY(object):
                 # erase everything in module except for name
                 #
                 mod__name__ = mod.__name__
+                #
+                o = mod.__dict__.copy()
+                #
                 mod.__dict__.clear()
+                #
                 mod.__name__ = mod__name__
                 #
-                mod = self._reload(mod)
+                try:
+                    #
+                    # choose python2 or python3 import
+                    #
+                    self._reload(mod)
+                except Exception as e:
+                    #
+                    # restore old module keys
+                    #
+                    mod.__dict__.update(o)
+                    #
+                    # forward exception
+                    #
+                    raise
+                else:
+                    pass
             else:
                 #
                 # print('initial import of ' + modname)
@@ -742,8 +770,6 @@ class XPY(object):
         # switch to new reloaded module
         #
         self.cdmod(modname)
-
-        return mod
 
     def refresh(self, regex):
         #
@@ -823,7 +849,7 @@ def start_console(with_globals = None, with_locals = None, is_polluted = True):
 
     with XPY() as xpy:
         #
-        with_locals['xpy'] = xpy
+        # with_locals['xpy'] = xpy
         #
         result = xpy.run(with_globals, with_locals, is_polluted = is_polluted)
 
