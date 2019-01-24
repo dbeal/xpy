@@ -88,10 +88,17 @@ class RepoHistory(object):
 
             os.system(' '.join(['git diff -b && git add ', self.history_path, ' && git commit -mwip ; git fetch && { [ -e ".git/refs/remotes/origin/HEAD" ] && git merge -munion || echo new master; } && git push']))
             os.chdir(od)
-            os.system(' '.join(['rm', '-rf', "'", self.tmpdir, "'"]))
+            #
+            print(' '.join(['removing', self.tmpdir]))
+            #
+            assert os.path.exists(self.tmpdir)
+            #
+            status = os.system(' '.join(['rm', '-rf', "'" + self.tmpdir + "'"]))
+            #
         else:
             #
-            # print('not the master process--not committing')
+            print('not the master process--not committing')
+            #
             pass
         pass
 
