@@ -7,12 +7,6 @@ import inspect
 import sys
 import os
 
-def typename(o):
-    return type(o).__name__
-
-def typedict(o):
-    return type(o).__dict__
-
 def EA(*args, **kwargs):
     return (args, kwargs)
     

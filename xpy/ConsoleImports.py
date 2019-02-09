@@ -13,7 +13,7 @@ class ConsoleImports(object):
     from .Micros import Micros as M
     from .XPY import ResumEx, rese
     from .Profiler import Profiler
-    from .Builtins import EA, typedict, typename, FL, ls
+    from .Builtins import EA, FL, ls
     from .Debug import Debug
     from .History import History
 

@@ -16,6 +16,7 @@ from cytoolz import curry
 import greenlet
 
 from collections import OrderedDict
+import code
 
 class ResumEx(Exception):
     pass
@@ -228,7 +229,6 @@ class XPY(object):
         self.input.extend(self.macro)
 
     def run(self, with_globals, with_locals, is_polluted = True):
-        from six.moves import input
 
         g = with_globals
         l = with_locals
@@ -285,6 +285,10 @@ class XPY(object):
         # for switching context into module
         #
         self.locals = locals()
+        #
+        # for reading code input with readline support
+        #
+        raw_input = code.InteractiveConsole().raw_input
 
         while True:
             prompt = self.get_prompt(execution)
@@ -302,7 +306,7 @@ class XPY(object):
                 #
             else:
                 try:
-                    source = input(prompt)
+                    source = raw_input(prompt)
                 except KeyboardInterrupt as ke:
                     (exc_type, ex, tb) = sys.exc_info()
                     self.hello('\n')
