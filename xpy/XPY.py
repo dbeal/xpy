@@ -282,6 +282,11 @@ class XPY(object):
         #
         execution.level = 0
         #
+        # exception info from sys.exc_info()
+        #
+        execution.exc_info = sys.exc_info()
+        execution.path = '<xpy>'
+        #
         # for switching context into module
         #
         self.locals = locals()
@@ -308,7 +313,9 @@ class XPY(object):
                 try:
                     source = raw_input(prompt)
                 except KeyboardInterrupt as ke:
-                    (exc_type, ex, tb) = sys.exc_info()
+                    exc_info = sys.exc_info()
+                    execution.exc_info = exc_info
+                    (exc_type, ex, tb) = exc_info
                     self.hello('\n')
                     self.print_exception(ex)
                 except EOFError as e:
@@ -429,7 +436,8 @@ class XPY(object):
         try:
             execution = self.compile_source(execution)
         except:
-            self.print_exception(sys.exc_info()[1])
+            execution.exc_info = sys.exc_info()
+            self.print_exception(execution.exc_info[1])
         else:
             #
             if execution.is_polluted:
@@ -446,21 +454,24 @@ class XPY(object):
                 self.execution = execution
                 #
                 exec(execution.code, execution.g, execution.l)
-                #
-                # break cyclic references
-                #
-                del self.execution
-                execution.t1 = time.time()
             except:
                 execution.t1 = time.time()
                 #
-                self.print_traceback()
-                self.print_exception()
+                execution.exc_info = sys.exc_info()
+                #
+                # self.print_traceback(execution.exc_info)
+                self.print_execution_info(execution)
             else:
                 #
                 # print('ok')
                 #
                 execution.result = True
+            finally:
+                #
+                # break cyclic references
+                #
+                del self.execution
+                execution.t1 = time.time()
             #
             # post execution pollution
             #
@@ -502,9 +513,9 @@ class XPY(object):
         if not execution.code:
             self.source.append(source)
             if '\n' in source:
-                code = compile(source, '<interactive console>', 'exec')
+                code = compile(source, execution.path, 'exec')
             else:
-                code = compile(source, '<interactive console>', 'single')
+                code = compile(source, execution.path, 'single')
             execution.code = code
         return execution
 
@@ -535,14 +546,15 @@ class XPY(object):
     source = []
 
     @anymethod
-    def print_traceback(self, tb = None):
-        top = self.get_traceback_top(tb)
-        self.print_backframes(top)
+    def print_traceback(self, exc_info = None, max_context_lines = 1):
+        top = self.get_traceback_top(exc_info)
+        self.print_backframes(top, max_context_lines = max_context_lines)
 
     @anymethod
-    def get_traceback_top(self, tb = None):
-        if tb is None:
-            (_, ex, tb) = sys.exc_info()
+    def get_traceback_top(self, exc_info = None):
+        if exc_info is None:
+            exc_info = sys.exc_info()
+        (_, ex, tb) = exc_info
         top = tb
         while top.tb_next is not None:
             top = top.tb_next
@@ -550,10 +562,10 @@ class XPY(object):
         return top
 
     @anymethod
-    def print_backframes(self, top, tb = None):
+    def print_backframes(self, top, tb = None, max_context_lines = 1):
         import inspect
 
-        max_context_lines = 3
+        # max_context_lines = 3
         #
         is_top_only = False
 
@@ -564,17 +576,20 @@ class XPY(object):
         frames.reverse()
 
         last_path = None
+        is_ellipsis = False
+        if_print_funcname = False
 
         for frame in frames:
-            try:
-                path = inspect.getfile(frame)
-            except TypeError as e:
-                path = '<unknown path>'
+            path = self.get_frame_path(frame)
 
             if path != last_path:
                 last_path = path
+                #
                 path = path + Colors.WHITE + ':'
+                #
                 self.hello(Colors.WHITE + path + Colors.NORM + '\n')
+                #
+                is_ellipsis = False
             else:
                 path = '...'
 
@@ -617,13 +632,66 @@ class XPY(object):
 
                     if abs(linedelta) < max_context_lines:
                         self.print_context_line(color, lineno, line)
+                        is_ellipsis = False
                     elif abs(linedelta) == max_context_lines:
-                        self.hello(Colors.WHITE + '...' + Colors.NORM + '\n')
+                        if not is_ellipsis:
+                            is_ellipsis = True
+                            self.hello(Colors.WHITE + '...' + Colors.NORM + '\n')
+                    elif lineno == firstlineno:
+                        if if_print_funcname:
+                            self.print_context_line(color, lineno, line)
+                            is_ellipsis = False
+                    else:
+                        #
+                        # line ignored
+                        #
+                        pass
+                    #
+
+    @classmethod
+    def get_frame_path(self, frame):
+        #
+        try:
+            path = inspect.getfile(frame)
+        except TypeError as e:
+            path = '<unknown path>'
+        #
+        return path
+        #
+    #
+    @classmethod
+    def print_execution_info(self, execution):
+        #
+        exc_info = execution.exc_info
+        #
+        top = self.get_traceback_top(exc_info)
+        #
+        path = self.get_frame_path(top)
+        #
+        if path != execution.path:
+            #
+            self.print_traceback(exc_info, max_context_lines = 1)
+            # trace = ''.join([Colors.WHITE, path, ': ', str(top.f_lineno), ' ', Colors.NORM])
+            #
+            # self.hello(trace + '\n')
+            #
+        #
+        (_, ex, tb) = exc_info
+        #
+        self.hello(Colors.RED + str(ex.__class__.__module__ + '.' + ex.__class__.__name__) + Colors.NORM + ((': ' + Colors.YELLOW + str(ex) + Colors.NORM) if str(ex) else '') + '\n')
+        if isinstance(ex, SyntaxError):
+            if ex.offset is not None:
+                self.print_context_line(Colors.NORM, ex.lineno, ex.text[:ex.offset - 1] + Colors.BGRED + Colors.WHITE + ex.text[ex.offset - 1: ex.offset] + Colors.NORM + ex.text[ex.offset:])
+            else:
+                self.print_context_line(Colors.NORM, ex.lineno, ex.text)
+
 
     @classmethod
     def print_exception(self, ex = None):
         if ex is None:
-            (_, ex, tb) = sys.exc_info()
+            exc_info = sys.exc_info()
+            (_, ex, tb) = exc_info
+        #
         self.hello(Colors.RED + str(ex.__class__.__module__ + '.' + ex.__class__.__name__) + Colors.NORM + ((': ' + Colors.YELLOW + str(ex) + Colors.NORM) if str(ex) else '') + '\n')
         if isinstance(ex, SyntaxError):
             if ex.offset is not None:
@@ -666,6 +734,8 @@ class XPY(object):
         #
         if self.execution.is_polluted:
             self.pollute(self.execution.g, self.execution.l)
+            #
+        #
     #
     def cdmod(self, modname, package = None):
         #
@@ -689,9 +759,13 @@ class XPY(object):
         #
         # switch context
         #
-        # in module context, locals() is globals()
+        # create a locals dict and store it on the module in a hidden variable
         #
-        self.switch(mod.__dict__, mod.__dict__)
+        localsname = '__xpy_locals__'
+        if localsname not in mod.__dict__:
+            mod.__dict__[localsname] = {}
+        #
+        self.switch(mod.__dict__, mod.__dict__[localsname])
         #
         # self.pollute(self.g, self.l)
         #
