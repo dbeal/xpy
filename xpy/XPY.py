@@ -604,7 +604,7 @@ class XPY(object):
             #
             if cmd:
                 #
-                print('cmd', cmd)
+                # print('cmd', cmd)
                 #
                 (fn, args) = cmd
                 #
