@@ -1,0 +1,18 @@
+
+# set PYTHONSTARTUP environment variable to point to this file, and it will be
+# executed whenever the interactive python console is started.
+
+#
+# xpy exhanced interactive console
+#
+# install xpy in editable mode
+#
+# use pip install --user -e /path/to/xpy
+#
+result = __import__('xpy').start_console()
+#
+# block normal startup
+#
+import sys
+sys.exit(0)
+

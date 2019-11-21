@@ -17,6 +17,9 @@ import greenlet
 
 from collections import OrderedDict
 import code
+#
+import re
+#
 
 class ResumEx(Exception):
     pass
@@ -104,8 +107,15 @@ from .Colors import Colors
 from .Micros import Micros as M
 from .ConsoleImports import ConsoleImports
 from .Anymethod import anymethod
+from .Clip import Clip
+from .ObjectAsDict import ObjectAsDict
 
 class XPY(object):
+    #
+    Clip = Clip
+    #
+    xpy_ref_name = 'xpy'
+    #
 
     # TODO: better handling of multiple console instances
     is_readline_busy = False
@@ -144,23 +154,191 @@ class XPY(object):
             self.put('__exit__', 'self', self, 'exc_type', exc_type, 'exc_val', exc_val, 'exc_tb', exc_tb)
         self.commit_history()
 
-    def setup_tab_completion(self, namespaces):
+    def setup_tab_completion(self, execution):
+        #
         if 1 or self.repo_history is not None:
-            import rlcompleter
+            #
             import readline
-            def completer(namespaces):
-                def fn(text, state):
-                    # combined namespace takes last precedence
-                    combined = {}
-                    for ns in namespaces:
-                        combined.update(ns)
-                    comp = rlcompleter.Completer(combined)
-                    # prime the matches
-                    for i in range(state + 1):
-                        result = comp.complete(text, i)
-                    return result
-                return fn
-            readline.set_completer(completer(namespaces))
+            #
+            if 0:
+                #
+                # TODO: fix this completer using Python AST parsing
+                #
+                def completer():
+                    #
+                    # closure around comp variable
+                    #
+                    #
+                    # match builtins like str, buffer, etc.
+                    #
+                    try:
+                        import __builtin__
+                        builtins = __builtin__
+                    except ModuleNotFoundError as e:
+                        import builtins
+                    #
+                    builtins = builtins.__dict__.keys()
+                    #
+                    # match language keywords like while, do, import, etc.
+                    #
+                    import keyword
+                    #
+                    keywords = keyword.kwlist
+                    #
+                    comp = {}
+                    #
+                    def _matchfn(text):
+                        if text.startswith('_'):
+                            def _match(attr):
+                                result = 0
+                                if attr.startswith(text):
+                                    result = 1
+                                return result
+                        else:
+                            def _match(attr):
+                                # print('attr', attr)
+                                result = 0
+                                if not attr.startswith('_'):
+                                    if attr.startswith(text):
+                                        result = 1
+                                return result
+                        return _match
+                    #
+                    def fn(text, state):
+                        #
+                        try:
+                            #
+                            # print('text', text, 'state', state)
+                            # print('get_line_buffer', readline.get_line_buffer())
+                            # print('get_begidx', readline.get_begidx())
+                            # print('get_endidx', readline.get_endidx())
+                            #
+                            if state == 0:
+                                #
+                                # scan for matches only when state == 0
+                                #
+                                key = text.rsplit('.', 1)
+                                #
+                                # print('text', text, 'key', key)
+                                #
+                                if len(key) > 1:
+                                    objexpr = key[0]
+                                    text = key[1]
+                                else:
+                                    objexpr = None
+                                    text = key[0]
+                                #
+                                # print('objexpr', objexpr, 'text', text)
+                                #
+                                if objexpr is not None:
+                                    obj = eval(objexpr, execution.g, execution.l)
+                                else:
+                                    obj = None
+                                #
+                                # print('obj', obj)
+                                #
+                                # save to state dict
+                                #
+                                comp['obj'] = obj
+                                comp['objexpr'] = objexpr
+                                comp['text'] = text
+                                #
+                                # assumes dir(None) == dir()
+                                #
+                                if obj is not None:
+                                    #
+                                    # print('using obj', obj)
+                                    #
+                                    attrs = dir(obj)
+                                else:
+                                    #
+                                    attrs = [
+                                        keywords,
+                                        builtins,
+                                        execution.g.keys(),
+                                        execution.l.keys(),
+                                    ]
+                                    #
+                                    attrs = reduce(list.__add__, attrs, [])
+                                    #
+                                #
+                                # print('attrs', attrs)
+                                #
+                                matches = filter(_matchfn(text), attrs)
+                                #
+                                comp['matches'] = matches
+                                #
+                            else:
+                                obj = comp['obj']
+                                objexpr = comp['objexpr']
+                                text = comp['text']
+                                #
+                                matches = comp['matches']
+                                #
+                            #
+                            if state < len(matches):
+                                if objexpr is not None:
+                                    result = objexpr + '.' + matches[state]
+                                else:
+                                    result = matches[state]
+                                    #
+                                #
+                            #
+                            else:
+                                result = None
+                                #
+                            #
+                            # print('result', result)
+                            #
+                            return result
+                            #
+                        except Exception as e:
+                            self.print_exception(e)
+                            result = None
+                            #
+                        #
+                    return fn
+                    #
+                #
+                # avoid delimiters so we can do our own parsing
+                #
+                readline.set_completer_delims('')
+                readline.set_completer(completer())
+                #
+            else:
+                #
+                import rlcompleter
+                #
+                def completer(self):
+                    def fn(text, state):
+                        # combined namespace takes last precedence
+                        # print('namespaces', namespaces)
+                        assert type(text) is str
+                        assert type(state) is int
+                        # print('state', state)
+                        #
+                        combined = {}
+                        combined.update(execution.g)
+                        combined.update(execution.l)
+                        #
+                        comp = rlcompleter.Completer(combined)
+                        #
+                        # prime the matches
+                        #
+                        for i in range(state + 1):
+                            result = comp.complete(text, i)
+                        #
+                        # avoid completing a function identifier with an open parens
+                        #
+                        result = result.rstrip('()')
+                        #
+                        return result
+                    return fn
+                    #
+                #
+                readline.set_completer(completer(self))
+                #
+            #
             readline.parse_and_bind('tab: complete')
         else:
             self.hello('not setting up tab completion\n')
@@ -184,7 +362,7 @@ class XPY(object):
             line = readline.get_history_item(i)
             lines.append(line)
         buf = '\n'.join(lines)
-        Clip.copy(buf)
+        self.Clip.copy(buf)
         
     def setup_tracing(self):
         def trace(frame, event, arg):
@@ -228,26 +406,13 @@ class XPY(object):
         #
         self.input.extend(self.macro)
 
-    def run(self, with_globals, with_locals, is_polluted = True):
+    def run(self, with_globals, with_locals, is_polluted = False, level = 0):
 
         g = with_globals
         l = with_locals
 
         if l is None:
             l = g
-
-        # readline can only support one instance at a time
-
-        # Make sure to search both global and local namespaces for
-        # autocomplete, but the results aren't duplicated if locals and globals
-        # are identical.
-        #
-        # In the stock Python interactive console, locals() is globals(), so
-        # rlcompleter only bothers to search globals(), i.e., console __main__.
-        #
-        # In the event that globals() is not locals(), and a local parameter
-        # shadows a global, the local variable takes precedence.
-        self.setup_tab_completion([g, l])
 
         # self.setup_tracing()
         # self.setup_profiler()
@@ -274,26 +439,37 @@ class XPY(object):
         execution.l = l
         #
         execution.is_polluted = is_polluted
+        execution.is_add_xpy_ref = True
         #
         execution.t0 = 0.0
         execution.t1 = 0.0
         #
         # process level
         #
-        execution.level = 0
+        execution.level = level
         #
         # exception info from sys.exc_info()
         #
         execution.exc_info = sys.exc_info()
         execution.path = '<xpy>'
         #
-        # for switching context into module
-        #
-        self.locals = locals()
-        #
         # for reading code input with readline support
         #
         raw_input = code.InteractiveConsole().raw_input
+
+        # readline can only support one instance at a time
+
+        # Make sure to search both global and local namespaces for
+        # autocomplete, but the results aren't duplicated if locals and globals
+        # are identical.
+        #
+        # In the stock Python interactive console, locals() is globals(), so
+        # rlcompleter only bothers to search globals(), i.e., console __main__.
+        #
+        # In the event that globals() is not locals(), and a local parameter
+        # shadows a global, the local variable takes precedence.
+        #
+        self.setup_tab_completion(execution)
 
         while True:
             prompt = self.get_prompt(execution)
@@ -324,11 +500,31 @@ class XPY(object):
                 else:
                     pass
             #
-            # print('source', source)
-            #
-            if source is not None:
+            if self._is_use_substitutions:
+                if source is not None:
+                    while True:
+                        #
+                        expsrc = self._run_command_substitutions(source)
+                        #
+                        # print('expsrc', expsrc, 'source')
+                        #
+                        if expsrc is not None and expsrc is not source:
+                            source = expsrc
+                        else:
+                            break
+                        #
+                    # may return None
+                else:
+                    expsrc = source
                 #
-                execution.source = source
+            else:
+                expsrc = source
+            #
+            # print('expsrc', expsrc)
+            #
+            if expsrc is not None:
+                #
+                execution.source = expsrc
                 #
                 if self.compile_and_exec(execution):
                     #
@@ -339,14 +535,133 @@ class XPY(object):
                 # record afterwards
                 #
                 if self.is_recording:
-                    # print('added source', source)
-                    self.macro.append(source)
+                    # print('added expsrc', expsrc)
+                    self.macro.append(expsrc)
         #
         if execution.level > 0:
             self.__pushprocessexit()
         #
         return True
 
+    #
+    # list of commands
+    #
+    # perform literal textual substitutions
+    #
+    _is_use_substitutions = True
+    _substitution_escape = ':'
+    _substitutions = {
+        #
+        # function_name: (args, body),
+        #
+        ':cdmod': (('modname',), 'xpy.cdmod("modname")', 'change current module'),
+        ':cd': (('modname',), ':cdmod modname', 'shorthand for :cdmod'),
+        ':cliprun': ((), '_cliprun = xpy.Clip.run()', 'run source code in system clipboard'),
+        ':help': ((), 'xpy.list_commands()', 'list commands'),
+        ':histcopy': (('line_count',), 'xpy.Clip.copy_from_history(line_count)', 'copy a number of lines from history into clipboard'),
+        ':histpaste': ((), 'xpy.Clip.paste_into_history()', 'paste system clipboard source into history'),
+        ':reload': ((), 'xpy.reload()', 'reload current module'),
+        ':r': ((), ':reload', 'shorthand for :reload'),
+    }
+    _cmd_pat = re.compile('^(' + '|'.join(_substitutions.keys()) + ')\\b')
+    #
+    @anymethod
+    def list_commands(self):
+        #
+        for (name, (sig, body, msg)) in self._substitutions.items():
+            #
+            line = ' '.join(map(str, [name] + list(sig) + ['=', body, msg]))
+            #
+            print(line)
+        #
+    #
+    @anymethod
+    def _parse_command(self, source):
+        #
+        cmd = ()
+        #
+        match = self._cmd_pat.search(source)
+        #
+        if match is not None:
+            #
+            fn = match.group(0)
+            #
+            args = source[len(fn):].split()
+            #
+            cmd = (fn, args)
+            #
+        #
+        return cmd
+    #
+    @anymethod
+    def _run_command_substitutions(self, source):
+        #
+        expsrc = source
+        #
+        if self._is_use_substitutions:
+            #
+            cmd = self._parse_command(source)
+            #
+            if cmd:
+                #
+                print('cmd', cmd)
+                #
+                (fn, args) = cmd
+                #
+                # print('fn', fn, 'args', args)
+                #
+                if fn in self._substitutions:
+                    #
+                    match = self._substitutions[fn]
+                    #
+                    # print('match', match)
+                    #
+                    # function signature and body
+                    #
+                    # substitute the string 'x' in sig with arg within the
+                    # expansion body
+                    #
+                    (sig, body, msg) = match
+                    #
+                    expansion = body
+                    #
+                    if len(args) == len(sig):
+                        for (s, a) in zip(sig, args):
+                            expansion = expansion.replace(s, a)
+                            #
+                        #
+                        #print('expansion', expansion)
+                        #
+                        expsrc = expansion
+                        #
+                    else:
+                        #
+                        msg = ' '.join(map(str, [
+                            'wrong number of arguments',
+                            'for command substitution', source,
+                            'expected', sig,
+                            'received', args,
+                        ]))
+                        #
+                        self.print_exception(TypeError(msg))
+                        #
+                        expsrc = None
+                        #
+                    #
+                else:
+                    msg = ' '.join(map(str, [
+                        'unknown command substitution', source,
+                    ]))
+                    #
+                    self.print_exception(TypeError(msg))
+                    #
+                    expsrc = ''
+                #
+            #
+        #
+        return expsrc
+        #
+    #
     @anymethod
     def format_times(self, t0, t1):
         dt = t1 - t0
@@ -400,9 +715,112 @@ class XPY(object):
 
         return result
 
+    #
+    def get_self_from(self, obj):
+        #
+        if isinstance(obj, ObjectAsDict):
+            #
+            _self = getattr(obj._obj, 'self', None)
+            #
+        else:
+            _self = obj.get('self')
+            #
+        #
+        return _self
+        #
+    #
+    @staticmethod
+    def runin(obj):
+        #
+        # run clipboard source with obj.__dict__ as locals()
+        #
+        mod = XPY.get_obj_module(obj)
+        #
+        _globals = mod.__dict__
+        #
+        _locals = ObjectAsDict(obj)
+        #
+        code = XPY.Clip.run(_globals, _locals)
+        #
+        result = code
+        #
+        return result
+        #
+    #
+    @classmethod
+    def get_obj_name(self, obj):
+        #
+        if isinstance(obj, type):
+            #
+            # class name
+            #
+            name = obj.__name__
+        else:
+            #
+            # add () parens to indicate instance
+            #
+            name = obj.__class__.__name__ + '()'
+            #
+        #
+        return name
+    #
+    def get_name_from(self, obj):
+        #
+        if isinstance(obj, ObjectAsDict):
+            #
+            name = self.get_obj_name(obj._obj)
+            #
+        else:
+            name = obj.get('__name__')
+            #
+        #
+        return name
+        #
+    #
+    def get_exec_name(self, execution):
+        #
+        g = execution.g
+        l = execution.l
+        #
+        globalname = self.get_name_from(g)
+        #
+        path = [globalname]
+        #
+        if l is not g:
+            #
+            localname = self.get_name_from(l)
+            #
+            if localname is not None:
+                #
+                path.append(localname)
+                #
+            #
+        #
+        _self = self.get_self_from(l)
+        #
+        if _self is None:
+            #
+            _self = self.get_self_from(g)
+            #
+        #
+        if _self is not None:
+            #
+            self_name = self.get_obj_name(_self)
+            #
+            path.append(self_name)
+        #
+        full_name = ' '.join(path)
+        #
+        result = full_name
+        #
+        return result
+        #
+    #
     def get_prompt(self, execution):
         # readline gets messed up with color prompt
         # prompt = Colors.GREY + ('%0.9f' % (self.t1 - self.t0)) + Colors.NORM + ' ' + Colors.GREEN + '!' + Colors.YELLOW + '!' + Colors.BLUE + '!' + Colors.NORM + ' '
+        #
+        exec_name = self.get_exec_name(execution)
         #
         prompt = ''.join((
             Colors.RLGREEN,
@@ -414,7 +832,7 @@ class XPY(object):
             #
             # name of current module context
             #
-            execution.g['__name__'],
+            exec_name,
             #
             Colors.RLNORM, ' ',
             Colors.RLGREY, '!', '!', '!',
@@ -445,6 +863,9 @@ class XPY(object):
                 # pollute the environment with xpy objects
                 #
                 self.pollute(execution.g, execution.l)
+            #
+            if execution.is_add_xpy_ref:
+                self.add_xpy_ref(execution.g, execution.l)
             #
             #
             # Time each code execution.
@@ -480,19 +901,17 @@ class XPY(object):
                 # TODO: clean up pollution
                 #
                 pass
-
-
+            #
+            if execution.is_add_xpy_ref:
+                #
+                # self.remove_xpy_ref(execution.g, execution.l)
+                #
+                pass
+            #
+        #
         return execution.result
-
-    def print_syntax_error(self, se):
-        with open(se.filename) as infile:
-            lines = list(infile)
-            se.filename
-            se.lineno
-            se.msg
-            se.offset
-            se.text
-
+        #
+    #
     def compile_source(self, execution):
         source = execution.source
         source = source.rstrip()
@@ -678,14 +1097,9 @@ class XPY(object):
         #
         (_, ex, tb) = exc_info
         #
-        self.hello(Colors.RED + str(ex.__class__.__module__ + '.' + ex.__class__.__name__) + Colors.NORM + ((': ' + Colors.YELLOW + str(ex) + Colors.NORM) if str(ex) else '') + '\n')
-        if isinstance(ex, SyntaxError):
-            if ex.offset is not None:
-                self.print_context_line(Colors.NORM, ex.lineno, ex.text[:ex.offset - 1] + Colors.BGRED + Colors.WHITE + ex.text[ex.offset - 1: ex.offset] + Colors.NORM + ex.text[ex.offset:])
-            else:
-                self.print_context_line(Colors.NORM, ex.lineno, ex.text)
-
-
+        self.print_exception(ex)
+        #
+    #
     @classmethod
     def print_exception(self, ex = None):
         if ex is None:
@@ -693,12 +1107,21 @@ class XPY(object):
             (_, ex, tb) = exc_info
         #
         self.hello(Colors.RED + str(ex.__class__.__module__ + '.' + ex.__class__.__name__) + Colors.NORM + ((': ' + Colors.YELLOW + str(ex) + Colors.NORM) if str(ex) else '') + '\n')
+        #
         if isinstance(ex, SyntaxError):
-            if ex.offset is not None:
-                self.print_context_line(Colors.NORM, ex.lineno, ex.text[:ex.offset - 1] + Colors.BGRED + Colors.WHITE + ex.text[ex.offset - 1: ex.offset] + Colors.NORM + ex.text[ex.offset:])
-            else:
-                self.print_context_line(Colors.NORM, ex.lineno, ex.text)
-
+            self.print_syntax_error(ex)
+            #
+        #
+    #
+    @classmethod
+    def print_syntax_error(self, ex):
+        #
+        text = ex.text
+        #
+        if (text is not None) and (ex.offset is not None):
+            self.print_context_line(Colors.NORM, ex.lineno, text[:ex.offset - 1] + Colors.BGRED + Colors.WHITE + text[ex.offset - 1: ex.offset] + Colors.NORM + text[ex.offset:])
+            #
+        #
     #
     def pollute(self, g, l):
         #
@@ -706,28 +1129,56 @@ class XPY(object):
         #
         pollution = OrderedDict(filter(lambda kv: not kv[0].startswith('_'), ConsoleImports.__dict__.items()))
         #
+        # pollute locals
+        #
+        d = l
+        #
         for (k, v) in pollution.items():
-            if k in g:
-                if g[k] is not v:
+            if k in d:
+                if d[k] is not v:
                     #
                     print(' '.join(['warning:', k, 'shadows', 'global']))
                     #
-            g.update(pollution)
+                #
+            #
+            d.update(pollution)
+            #
         #
-        # add more trinkets
+    #
+    def add_xpy_ref(self, _globals, _locals):
+        """
+        add reference to this object to __builtins__ dict
+        """
+        if 1:
+            add_to = __builtins__
+        else:
+            add_to = _globals
         #
-        k = 'xpy'
+        name = self.xpy_ref_name
         #
-        if k in l:
-            if l[k] is not self:
+        if name in add_to:
+            if add_to[name] is not self:
                     #
-                    print(' '.join(['warning:', k, 'shadows', 'local']))
+                    print(' '.join(['warning:', name, 'shadows', 'local']))
                     #
-        l[k] = self
+                #
+            #
+        #
+        add_to[name] = self
+        #
+    #
+    def newloc(___xpy___, **new_locals):
+        #
+        # use globals from execution frame along with a new locals dict
+        #
+        ___xpy___.switch(___xpy___.execution.g, new_locals)
+        #
     #
     def switch(self, g, l):
         #
-        self.setup_tab_completion([g, l])
+        # Python requires exec globals to be a dict
+        #
+        assert type(g) is dict
         #
         self.execution.g = g
         self.execution.l = l
@@ -735,6 +1186,87 @@ class XPY(object):
         if self.execution.is_polluted:
             self.pollute(self.execution.g, self.execution.l)
             #
+        #
+        if self.execution.is_add_xpy_ref:
+            self.add_xpy_ref(self.execution.g, self.execution.l)
+            #
+        #
+        self.setup_tab_completion(self.execution)
+        #
+    #
+    def closure(self):
+        #
+        # TODO: create a closure and switch context
+        #
+        def fn():
+            # global self
+            g = self.execution.g
+            # del self
+            #
+            # don't use context manager since repo history will be written
+            #
+            xpy = XPY()
+            #
+            l = locals()
+            #
+            del l['g']
+            del l['self']
+            #
+            l['xpy'] = xpy
+            #
+            result = xpy.run(g, locals())
+            #
+            print('exiting fn')
+            #
+            return result
+            #
+        #
+        fn()
+        #
+    #
+    def cdobj(self, obj, l_obj = None):
+        #
+        # use object dict as locals
+        #
+        if l_obj is not None:
+            #
+            # use two objects
+            #
+            self.switch(ObjectAsDict(obj), ObjectAsDict(l_obj))
+        else:
+            self.switch(self.execution.g, ObjectAsDict(obj))
+        #
+    #
+    @classmethod
+    def get_obj_module(self, obj):
+        #
+        import types
+        #
+        if isinstance(obj, types.ModuleType):
+            mod = obj
+        else:
+            if isinstance(obj, type):
+                cls = obj
+            else:
+                cls = obj.__class__
+            #
+            mod = sys.modules[cls.__module__]
+            #
+        #
+        result = mod
+        #
+        return result
+    #
+    @classmethod
+    def getpath(self, obj):
+        #
+        mod = self.get_obj_module(obj)
+        #
+        path = mod.__file__
+        #
+        result = path
+        #
+        return result
         #
     #
     def cdmod(self, modname, package = None):
@@ -759,13 +1291,28 @@ class XPY(object):
         #
         # switch context
         #
-        # create a locals dict and store it on the module in a hidden variable
+        is_use_globals = 1
+        is_use_execution_context = 0
         #
-        localsname = '__xpy_locals__'
-        if localsname not in mod.__dict__:
-            mod.__dict__[localsname] = {}
+        _globals = mod.__dict__
         #
-        self.switch(mod.__dict__, mod.__dict__[localsname])
+        if is_use_globals:
+            _locals = _globals
+        elif is_use_execution_context:
+            _locals = self.execution.l
+        else:
+            #
+            # create a locals dict and store it on the module in a hidden variable
+            #
+            localsname = '__xpy_locals__'
+            #
+            if localsname not in mod.__dict__:
+                mod.__dict__[localsname] = {}
+            #
+            _locals = mod.__dict__[localsname]
+            #
+        #
+        self.switch(_globals, _locals)
         #
         # self.pollute(self.g, self.l)
         #
@@ -774,18 +1321,25 @@ class XPY(object):
         # self.l['__mod__'] = mod
 
     @classmethod
-    def _reload(self, modname):
+    def _reload(self, mod):
         #
         # in order to work with python2 or 3
         #
         if 'reload' in __builtins__:
+            #
             # python 2
-            reload(modname)
+            #
+            reload(mod)
+            #
         else:
+            #
             # python 3
+            #
             import importlib
-            importlib.reload(modname)
-
+            importlib.reload(mod)
+            #
+        #
+    #
     def reload(self, modname = None):
         #
         # reload only the current module
@@ -823,6 +1377,7 @@ class XPY(object):
                     # choose python2 or python3 import
                     #
                     self._reload(mod)
+                    #
                 except Exception as e:
                     #
                     # restore old module keys
@@ -858,8 +1413,6 @@ class XPY(object):
         back__name__ = back.f_globals['__name__']
         #
         # unload all modules by regex pattern and then reload the current module
-        #
-        import re
         #
         pat = re.compile('^' + regex)
         #
@@ -908,7 +1461,7 @@ class XPY(object):
             #
             # self.repo_history.write_history()
 
-def start_console(with_globals = None, with_locals = None, is_polluted = True):
+def start_console(with_globals = None, with_locals = None, is_polluted = False):
     """
     If run without globals or locals, take those values from the caller's
     frame.
@@ -927,10 +1480,14 @@ def start_console(with_globals = None, with_locals = None, is_polluted = True):
 
     with XPY() as xpy:
         #
-        # with_locals['xpy'] = xpy
-        #
         result = xpy.run(with_globals, with_locals, is_polluted = is_polluted)
+        #
 
     return result
 
 xpy_start_console = start_console
+
+class Main(object):
+    @classmethod
+    def main(self):
+        xpy_start_console()
